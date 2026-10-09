@@ -21,6 +21,7 @@ src/
 ├─ AVLStudentManagement.Core/        thư viện logic, không phụ thuộc WPF
 │  ├─ DataStructures/AvlTree.cs      cây AVL chứa Student, khóa là mã SV
 │  ├─ Models/                        Student, Enums (Gender, Status, Grade), Catalog (khoa -> lớp)
+│  ├─ Validation/StudentValidator.cs kiểm tra từng trường, trả lỗi theo tên trường
 │  ├─ Data/ExcelStudentRepository.cs đọc/ghi .xlsx bằng ClosedXML
 │  ├─ Services/StudentService.cs     giữ 1 cây AVL + 2 HashSet, điều phối mọi thao tác, kiểm tra dữ liệu (Validate)
 │  └─ Services/StudentException.cs   lớp lỗi duy nhất của chương trình (dữ liệu không hợp lệ, trùng khóa, file Excel sai)
@@ -47,6 +48,8 @@ Thao tác đọc (tìm theo mã SV, lọc) lấy thẳng từ cây, không đọ
 | `idTree`: `AvlTree` | `StudentId` (so theo giá trị số: 2 < 10 < 100) | Tìm, thêm, sửa, xóa, danh sách có thứ tự, vẽ cây |
 | `nationalIds`: `HashSet<string>` | CCCD | Kiểm tra trùng CCCD, O(1) |
 | `emails`: `HashSet<string>` | Email (không phân biệt hoa thường) | Kiểm tra trùng email, O(1) |
+
+**Vì sao cây điểm dùng khóa là cặp (điểm, mã SV):** nhiều sinh viên có thể cùng điểm, mà cây AVL ở đây không cho khóa trùng. Thêm mã SV vào khóa làm mỗi khóa duy nhất, và các sinh viên cùng điểm được xếp theo mã SV.
 
 **Vì sao CCCD và email dùng `HashSet`, không dùng AVL:** hai trường này chỉ cần biết "đã có chưa", không cần sắp xếp hay tìm theo khoảng, nên băm O(1) là đủ.
 
