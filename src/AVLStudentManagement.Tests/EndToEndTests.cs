@@ -93,12 +93,12 @@ public class EndToEndTests
         service.Import(Enumerable.Range(1, 20).Select(n => Make(n, n / 5.0)));
 
         Assert.AreEqual(5, service.DeleteByIdRange("00000006", "00000010"));
-        var (added, skipped) = service.Import(new[] { Make(6), Make(7), Make(1) }); // 1 đã tồn tại
+        var (added, errors) = service.Import(new[] { Make(6), Make(7), Make(1) }); // 1 đã tồn tại
 
         var reloaded = NewService();
         Assert.AreEqual(17, reloaded.GetAll().Count());
         Assert.AreEqual(2, added);
-        Assert.AreEqual(1, skipped);
+        Assert.HasCount(1, errors);
         Assert.AreEqual(3, reloaded.FindByGpaRange(0.2, 0.6).Count); // n=1,2,3 -> 0.2,0.4,0.6
     }
 

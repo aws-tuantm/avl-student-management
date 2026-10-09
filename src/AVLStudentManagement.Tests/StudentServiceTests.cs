@@ -71,10 +71,12 @@ public class StudentServiceTests
     {
         Seed(MakeStudent("20240001"));
         var bad = MakeStudent("20240009") with { Gpa = 9 }; // điểm sai
-        var (added, skipped) = service.Import(new[] { MakeStudent("20240001"), MakeStudent("20240002"), bad });
+        var (added, errors) = service.Import(new[] { MakeStudent("20240001"), MakeStudent("20240002"), bad });
 
         Assert.AreEqual(1, added);
-        Assert.AreEqual(2, skipped);
+        Assert.HasCount(2, errors);
+        StringAssert.Contains(errors[0], "StudentId");
+        StringAssert.Contains(errors[1], "Điểm TB");
         CollectionAssert.AreEqual(new[] { "20240001", "20240002" }, Ids(repo.Data));
     }
 

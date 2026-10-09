@@ -254,9 +254,17 @@ public partial class MainViewModel : ObservableObject, INotifyDataErrorInfo
         try
         {
             var (students, _) = new ExcelStudentRepository(dialog.FileName).Load();
-            var (added, skipped) = Time(() => service.Import(students));
+            var (added, errors) = Time(() => service.Import(students));
             AfterWrite();
-            Info($"Đã nhập {added} sinh viên, bỏ qua {skipped} (trùng khóa hoặc dữ liệu không hợp lệ).");
+
+            string report = $"Đã nhập {added} sinh viên.";
+            if (errors.Count > 0)
+            {
+                const int maxShown = 15;
+                report += $"\nBỏ qua {errors.Count} sinh viên:\n" + string.Join("\n", errors.Take(maxShown));
+                if (errors.Count > maxShown) report += $"\n... và {errors.Count - maxShown} sinh viên khác.";
+            }
+            Info(report);
         }
         catch (DataFormatException ex) { Info($"File nhập bị lỗi: {ex.Message}"); }
         catch (IOException ex) { Info("Không nhập được file (file có đang mở trong Excel không?).\n" + ex.Message); }

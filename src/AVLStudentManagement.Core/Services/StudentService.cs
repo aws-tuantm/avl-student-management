@@ -101,29 +101,39 @@ public sealed class StudentService
         catch { Remove(student); throw; }
     }
 
-    /// <summary>Nhập hàng loạt: SV hợp lệ và không trùng thì thêm, còn lại bỏ qua. Chỉ lưu 1 lần.</summary>
-    public (int Added, int Skipped) Import(IEnumerable<Student> students)
+    /// <summary>
+    /// Nhập hàng loạt: SV hợp lệ và không trùng thì thêm, còn lại bỏ qua. Chỉ lưu 1 lần.
+    /// Errors có một dòng cho mỗi SV bị bỏ qua, nêu rõ trường nào sai và vì sao.
+    /// </summary>
+    public (int Added, List<string> Errors) Import(IEnumerable<Student> students)
     {
         var added = new List<Student>();
-        int skipped = 0;
+        var errors = new List<string>();
         var now = DateTime.Now;
         foreach (var raw in students)
         {
             var student = Normalize(raw) with { CreatedAt = now, UpdatedAt = now };
-            if (StudentValidator.Validate(student, Catalog).Count > 0 ||
-                FindDuplicate(student, byId, nationalIds, emails) != null)
+            string label = $"SV '{student.StudentId}' ({student.FullName})";
+
+            var invalid = StudentValidator.Validate(student, Catalog);
+            if (invalid.Count > 0)
             {
-                skipped++;
+                errors.Add($"{label}: {string.Join(" ", invalid.Values)}");
+                continue;
+            }
+            if (FindDuplicate(student, byId, nationalIds, emails) is var (field, value))
+            {
+                errors.Add($"{label}: trùng {field} '{value}' với sinh viên đã có.");
                 continue;
             }
             Insert(student);
             added.Add(student);
         }
-        if (added.Count == 0) return (0, skipped);
+        if (added.Count == 0) return (0, errors);
 
         try { Save(); }
         catch { foreach (var student in added) Remove(student); throw; }
-        return (added.Count, skipped);
+        return (added.Count, errors);
     }
 
     /// <summary>Sửa hồ sơ. StudentId dùng để tìm và không đổi được.</summary>
