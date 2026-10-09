@@ -1,4 +1,4 @@
-# Quản lý hồ sơ sinh viên bằng cây AVL
+#  Ứng dụng cây nhị phân tìm kiếm AVL cho bài toán quản lý hồ sơ điện từ của sinh viên
 
 Ứng dụng desktop (WPF, .NET 8) quản lý hồ sơ sinh viên. Dữ liệu lưu trong file Excel, còn mọi thao tác tìm, thêm, xóa, lọc theo khoảng đều chạy trên **cây nhị phân tìm kiếm tự cân bằng AVL** trong bộ nhớ.
 
