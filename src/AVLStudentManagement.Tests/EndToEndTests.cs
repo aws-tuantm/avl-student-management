@@ -2,11 +2,11 @@ using System.Diagnostics;
 using AVLStudentManagement.Core.Data;
 using AVLStudentManagement.Core.Models;
 using AVLStudentManagement.Core.Services;
-using AVLStudentManagement.Core.Validation;
+
 
 namespace AVLStudentManagement.Tests;
 
-/// <summary>Chạy thật: Service + file Excel thật (CRUD rồi nạp lại), và đo tốc độ tìm kiếm trên cây.</summary>
+// Chạy thật: Service + file Excel thật (CRUD rồi nạp lại), và đo tốc độ tìm kiếm trên cây.
 [TestClass]
 public class EndToEndTests
 {
@@ -24,7 +24,7 @@ public class EndToEndTests
     [TestCleanup]
     public void Cleanup()
     {
-        try { Directory.Delete(dir, true); } catch { /* bỏ qua */ }
+        try { Directory.Delete(dir, true); } catch { } // bỏ qua
     }
 
     private static Student Make(int n, double gpa = 3.0) => new()
@@ -73,14 +73,14 @@ public class EndToEndTests
         service.Add(Make(3, 2.5));
         service.Add(Make(1, 3.9));
         service.Add(Make(2, 3.1));
-        service.Update(Make(2, 3.7) with { FullName = "  Trần   Thị B " });
-        Assert.IsTrue(service.Delete(Make(3).StudentId));
+        service.Update(Make(2, 3.7).Change(s => { s.FullName = "  Trần   Thị B "; }));
+        Assert.AreEqual(1, service.DeleteMany(new List<Student> { Make(3) }));
 
         // Mở lại như lần chạy app sau: dữ liệu phải còn đúng trong file
         var reloaded = NewService();
         CollectionAssert.AreEqual(new[] { "00000001", "00000002" }, reloaded.GetAll().Select(s => s.StudentId).ToArray());
         Assert.AreEqual("Trần Thị B", reloaded.Find("00000002")!.FullName);
-        Assert.AreEqual("00000001", reloaded.TopStudent()!.StudentId);
+        Assert.AreEqual("00000001", reloaded.TopN(1)[0].StudentId);
         Assert.AreEqual(3.7, reloaded.Find("00000002")!.Gpa);
         Assert.IsNull(reloaded.Find("00000003"));
     }
@@ -90,16 +90,17 @@ public class EndToEndTests
     {
         CreateDbWithCatalog();
         var service = NewService();
-        service.Import(Enumerable.Range(1, 20).Select(n => Make(n, n / 5.0)));
+        service.Import(Enumerable.Range(1, 20).Select(n => Make(n, n / 5.0)).ToList(), new List<string>());
 
         Assert.AreEqual(5, service.DeleteByIdRange("00000006", "00000010"));
-        var (added, skipped) = service.Import(new[] { Make(6), Make(7), Make(1) }); // 1 đã tồn tại
+        var errors = new List<string>();
+        int added = service.Import(new List<Student> { Make(6), Make(7), Make(1) }, errors); // 1 đã tồn tại
 
         var reloaded = NewService();
         Assert.AreEqual(17, reloaded.GetAll().Count());
         Assert.AreEqual(2, added);
-        Assert.AreEqual(1, skipped);
-        Assert.AreEqual(3, reloaded.FindByGpaRange(0.2, 0.6).Count); // n=1,2,3 -> 0.2,0.4,0.6
+        Assert.HasCount(1, errors);
+        Assert.IsNotNull(reloaded.Find("00000007")); // sinh viên nhập lại sau khi xóa khoảng
     }
 
     [TestMethod]
@@ -109,11 +110,11 @@ public class EndToEndTests
         var service = NewService();
         service.Add(Make(1));
 
-        Assert.ThrowsExactly<DuplicateKeyException>(() => service.Add(Make(1)));
-        Assert.ThrowsExactly<DuplicateKeyException>(() => service.Add(Make(2) with { NationalId = Make(1).NationalId }));
-        Assert.ThrowsExactly<DuplicateKeyException>(() => service.Add(Make(3) with { Email = "SV1@X.VN" })); // email không phân biệt hoa thường
-        Assert.ThrowsExactly<ValidationException>(() => service.Add(Make(4) with { Gpa = 4.5 }));
-        Assert.ThrowsExactly<ValidationException>(() => service.Add(Make(5) with { StudentId = "abc" }));
+        Assert.ThrowsExactly<StudentException>(() => service.Add(Make(1)));
+        Assert.ThrowsExactly<StudentException>(() => service.Add(Make(2).Change(s => { s.NationalId = Make(1).NationalId; })));
+        Assert.ThrowsExactly<StudentException>(() => service.Add(Make(3).Change(s => { s.Email = "SV1@X.VN"; }))); // email không phân biệt hoa thường
+        Assert.ThrowsExactly<StudentException>(() => service.Add(Make(4).Change(s => { s.Gpa = 0; })));
+        Assert.ThrowsExactly<StudentException>(() => service.Add(Make(5).Change(s => { s.StudentId = "abc"; })));
 
         Assert.AreEqual(1, NewService().GetAll().Count());
     }
@@ -125,7 +126,7 @@ public class EndToEndTests
         repo.Catalog.Add("CNTT", "CNTT01");
         const int n = 100_000;
         var rng = new Random(1);
-        repo.Data = Enumerable.Range(1, n).Select(i => Make(i, Math.Round(rng.NextDouble() * 4, 2))).OrderBy(_ => rng.Next()).ToList();
+        repo.Data = Enumerable.Range(1, n).Select(i => Make(i, Math.Round(rng.NextDouble() * 10, 2))).OrderBy(_ => rng.Next()).ToList();
         var service = new StudentService(repo);
 
         var sw = Stopwatch.StartNew();
@@ -140,24 +141,20 @@ public class EndToEndTests
         for (int i = 1; i <= 10_000; i++) Assert.IsNotNull(service.Find((i * 7 % n + 1).ToString("D8")));
         double findUs = sw.Elapsed.TotalMilliseconds * 1000 / 10_000;
 
-        // Tìm khoảng mã 50 phần tử, khoảng điểm, Top 10, thủ khoa
+        // Tìm khoảng mã 50 phần tử và Top 10 (Top 10 phải sắp xếp lại cả danh sách)
         sw.Restart();
         var byId = service.FindByIdRange("00050000", "00050049");
         double rangeIdMs = sw.Elapsed.TotalMilliseconds;
-        sw.Restart();
-        var byGpa = service.FindByGpaRange(3.99, 4.0);
-        double rangeGpaMs = sw.Elapsed.TotalMilliseconds;
         sw.Restart();
         var top = service.TopN(10);
         double topMs = sw.Elapsed.TotalMilliseconds;
 
         Assert.AreEqual(50, byId.Count);
-        Assert.AreEqual(byGpa.Count, repo.Data.Count(s => s.Gpa >= 3.99 && s.Gpa <= 4.0));
         Assert.AreEqual(10, top.Count);
-        Assert.AreEqual(repo.Data.Max(s => s.Gpa), service.TopStudent()!.Gpa);
+        Assert.AreEqual(repo.Data.Max(s => s.Gpa), top[0].Gpa);
 
         Console.WriteLine($"n={n}: Load {loadMs} ms, h={service.Tree.Height}, Find {findUs:F2} us/lần, " +
-                          $"Range mã {rangeIdMs:F3} ms, Range điểm {rangeGpaMs:F3} ms ({byGpa.Count} kq), Top10 {topMs:F3} ms");
+                          $"Range mã {rangeIdMs:F3} ms, Top10 {topMs:F3} ms");
         Assert.IsLessThan(50, findUs);       // 1 lần tìm < 50 micro giây (thực tế ~1 us)
         Assert.IsLessThan(20, rangeIdMs);
     }
@@ -168,7 +165,7 @@ public class EndToEndTests
         CreateDbWithCatalog();
         var service = NewService();
         var sw = Stopwatch.StartNew();
-        service.Import(Enumerable.Range(1, 5000).Select(i => Make(i)));
+        service.Import(Enumerable.Range(1, 5000).Select(i => Make(i)).ToList(), new List<string>());
         long saveMs = sw.ElapsedMilliseconds;
 
         sw.Restart();

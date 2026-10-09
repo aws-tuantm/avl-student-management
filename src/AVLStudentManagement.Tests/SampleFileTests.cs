@@ -19,7 +19,7 @@ public class SampleFileTests
         int count = service.GetAll().Count();
         Assert.IsGreaterThan(0, count);
         Assert.AreEqual(count, service.Tree.Count);
-        Assert.IsNotNull(service.TopStudent());
+        Assert.AreEqual(1, service.TopN(1).Count);
         Assert.IsLessThanOrEqualTo(1.45 * Math.Log2(count + 2), service.Tree.Height); // chiều cao AVL tối đa
     }
 

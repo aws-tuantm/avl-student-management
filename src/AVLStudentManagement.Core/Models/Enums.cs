@@ -1,36 +1,48 @@
 namespace AVLStudentManagement.Core.Models;
 
-public enum Gender { Male, Female, Other }
+public enum Gender
+{
+    Male,
+    Female,
+    Other
+}
 
-public enum Status { Studying, OnLeave, Graduated, DroppedOut }
+public enum Status
+{
+    Studying,
+    OnLeave,
+    Graduated,
+    DroppedOut
+}
 
-public enum Grade { Excellent, VeryGood, Good, Average, Weak, Poor }
+public enum Grade
+{
+    Excellent,
+    VeryGood,
+    Good,
+    Average,
+    Weak,
+    Poor
+}
 
-/// <summary>Nhãn tiếng Việt để hiển thị lên giao diện.</summary>
 public static class EnumDisplay
 {
-    public static string ToDisplay(this Gender v) => v switch
-    {
-        Gender.Male => "Nam",
-        Gender.Female => "Nữ",
-        _ => "Khác",
-    };
+    private static readonly string[] GenderTexts = { "Nam", "Nữ", "Khác" };
+    private static readonly string[] StatusTexts = { "Đang học", "Bảo lưu", "Đã tốt nghiệp", "Thôi học" };
+    private static readonly string[] GradeTexts = { "Xuất sắc", "Giỏi", "Khá", "Trung bình", "Yếu", "Kém" };
 
-    public static string ToDisplay(this Status v) => v switch
+    public static string ToDisplay(this Gender value)
     {
-        Status.Studying => "Đang học",
-        Status.OnLeave => "Bảo lưu",
-        Status.Graduated => "Đã tốt nghiệp",
-        _ => "Thôi học",
-    };
+        return GenderTexts[(int)value];
+    }
 
-    public static string ToDisplay(this Grade v) => v switch
+    public static string ToDisplay(this Status value)
     {
-        Grade.Excellent => "Xuất sắc",
-        Grade.VeryGood => "Giỏi",
-        Grade.Good => "Khá",
-        Grade.Average => "Trung bình",
-        Grade.Weak => "Yếu",
-        _ => "Kém",
-    };
+        return StatusTexts[(int)value];
+    }
+
+    public static string ToDisplay(this Grade value)
+    {
+        return GradeTexts[(int)value];
+    }
 }

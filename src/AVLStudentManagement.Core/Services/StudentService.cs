@@ -1,266 +1,489 @@
-using AVLStudentManagement.Core.DataStructures;
 using AVLStudentManagement.Core.Data;
+using AVLStudentManagement.Core.DataStructures;
 using AVLStudentManagement.Core.Models;
-using AVLStudentManagement.Core.Validation;
+using System.Text.RegularExpressions;
 
 namespace AVLStudentManagement.Core.Services;
 
-/// <summary>Trùng khóa (StudentId, NationalId hoặc Email). Field là tên trường bị trùng.</summary>
-public sealed class DuplicateKeyException : Exception
-{
-    public string Field { get; }
-
-    public DuplicateKeyException(string field, string value)
-        : base($"{field} '{value}' đã tồn tại.")
-    {
-        Field = field;
-    }
-}
-
-/// <summary>
-/// Giữ 2 cây AVL (StudentId; Gpa+StudentId) và 2 HashSet (NationalId, Email).
-/// Mỗi thao tác ghi: kiểm tra, cập nhật cây, lưu Excel. Lưu lỗi thì hoàn tác.
-/// </summary>
-public sealed class StudentService
+// Giữ 1 cây AVL (theo StudentId) và 2 HashSet (NationalId, Email).
+// Mỗi thao tác ghi: kiểm tra, cập nhật cây, lưu Excel. Lưu lỗi thì hoàn tác.
+public class StudentService
 {
     private readonly IStudentRepository repo;
-    private AvlTree<string, Student> byId = new(StringComparer.Ordinal);
-    private AvlTree<(double Gpa, string StudentId), Student> byGpa = new(GpaComparer);
-    private HashSet<string> nationalIds = new();
-    private HashSet<string> emails = new(StringComparer.OrdinalIgnoreCase);
+    private AvlTree idTree = new AvlTree();
+    private HashSet<string> nationalIds = new HashSet<string>();
+    private HashSet<string> emails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-    public Catalog Catalog { get; private set; } = new();
+    public Catalog Catalog { get; private set; } = new Catalog();
 
-    /// <summary>Cây StudentId, chỉ để đọc (màn hình vẽ cây dùng).</summary>
-    public AvlTree<string, Student> Tree => byId;
+    public AvlTree Tree
+    {
+        get { return idTree; }
+    }
 
     public StudentService(IStudentRepository repo)
     {
         this.repo = repo;
     }
 
-    // So Gpa trước, bằng nhau thì so StudentId để khóa luôn duy nhất
-    private static readonly IComparer<(double Gpa, string StudentId)> GpaComparer =
-        Comparer<(double Gpa, string StudentId)>.Create((a, b) =>
-        {
-            int c = a.Gpa.CompareTo(b.Gpa);
-            return c != 0 ? c : string.CompareOrdinal(a.StudentId, b.StudentId);
-        });
 
-    private static (double, string) GpaKey(Student student) => (student.Gpa, student.StudentId);
-
-    // ---------- Đọc ----------
-
-    /// <summary>Đọc Excel và dựng 2 cây. Trùng khóa trong file thì báo lỗi kèm số dòng.</summary>
+    // Đọc Excel và dựng cây. Trùng khóa trong file thì báo lỗi kèm số dòng.
     public void Load()
     {
-        var (list, catalog) = repo.Load();
+        List<Student> list = repo.Load();
 
         // Dựng vào biến tạm, đủ hợp lệ mới gán vào service (lỗi giữa chừng thì service giữ nguyên)
-        var newById = new AvlTree<string, Student>(StringComparer.Ordinal);
-        var newByGpa = new AvlTree<(double Gpa, string StudentId), Student>(GpaComparer);
-        var newNationalIds = new HashSet<string>();
-        var newEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        AvlTree newIdTree = new AvlTree();
+        HashSet<string> newNationalIds = new HashSet<string>();
+        HashSet<string> newEmails = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         for (int i = 0; i < list.Count; i++)
         {
-            var student = list[i];
-            // Số dòng thật trong file (repo bỏ qua dòng trống nên i + 2 có thể lệch)
-            int row = repo.RealRows?[i] ?? i + 2; // dòng 1 là header
-            if (FindDuplicate(student, newById, newNationalIds, newEmails) is var (field, value))
-                throw new DataFormatException(row, field, $"{field} '{value}' bị trùng.");
-            Insert(student, newById, newByGpa, newNationalIds, newEmails);
+            Student student = list[i];
+
+            // Số dòng thật trong file (repo bỏ qua dòng trống nên i + 2 có thể lệch). Dòng 1 là tiêu đề.
+            int row = i + 2;
+            if (repo.RealRows != null)
+            {
+                row = repo.RealRows[i];
+            }
+
+            StudentException? duplicate = FindDuplicate(student, newIdTree, newNationalIds, newEmails);
+            if (duplicate != null)
+            {
+                throw new StudentException(row, duplicate.Field, $"{duplicate.Field} '{duplicate.Value}' bị trùng.");
+            }
+
+            Insert(student, newIdTree, newNationalIds, newEmails);
         }
 
-        byId = newById;
-        byGpa = newByGpa;
+        idTree = newIdTree;
         nationalIds = newNationalIds;
         emails = newEmails;
-        Catalog = catalog;
+        Catalog = repo.Catalog;
     }
 
-    /// <summary>Toàn bộ sinh viên, tăng dần theo StudentId.</summary>
-    public IEnumerable<Student> GetAll() => byId.InOrder().Select(p => p.Value);
+    public List<Student> GetAll()
+    {
+        return idTree.InOrder();
+    }
 
-    public Student? Find(string studentId) => byId.TryGet(studentId, out var student) ? student : null;
+    public Student? Find(string studentId)
+    {
+        return idTree.Find(MakeIdSample(studentId));
+    }
 
-    // ---------- Ghi ----------
 
     public void Add(Student student)
     {
-        var now = DateTime.Now;
-        student = Normalize(student) with { CreatedAt = now, UpdatedAt = now };
+        DateTime now = DateTime.Now;
+        student = Normalize(student);
+        student.CreatedAt = now;
+        student.UpdatedAt = now;
         Check(student);
 
-        if (byId.TryGet(student.StudentId, out _)) throw new DuplicateKeyException(nameof(Student.StudentId), student.StudentId);
-        if (nationalIds.Contains(student.NationalId)) throw new DuplicateKeyException(nameof(Student.NationalId), student.NationalId);
-        if (emails.Contains(student.Email)) throw new DuplicateKeyException(nameof(Student.Email), student.Email);
+        StudentException? duplicate = FindDuplicate(student, idTree, nationalIds, emails);
+        if (duplicate != null)
+        {
+            throw duplicate;
+        }
 
         Insert(student);
-        try { Save(); }
-        catch { Remove(student); throw; }
+        try
+        {
+            Save();
+        }
+        catch
+        {
+            Remove(student);
+            throw;
+        }
     }
 
-    /// <summary>Nhập hàng loạt: SV hợp lệ và không trùng thì thêm, còn lại bỏ qua. Chỉ lưu 1 lần.</summary>
-    public (int Added, int Skipped) Import(IEnumerable<Student> students)
+    // Nhập hàng loạt, chỉ lưu 1 lần. Sinh viên bị bỏ qua thì thêm lý do vào errors, trả về số đã thêm.
+    public int Import(List<Student> students, List<string> errors)
     {
-        var added = new List<Student>();
-        int skipped = 0;
-        var now = DateTime.Now;
-        foreach (var raw in students)
+        List<Student> added = new List<Student>();
+        DateTime now = DateTime.Now;
+
+        foreach (Student rawStudent in students)
         {
-            var student = Normalize(raw) with { CreatedAt = now, UpdatedAt = now };
-            if (StudentValidator.Validate(student, Catalog).Count > 0 ||
-                FindDuplicate(student, byId, nationalIds, emails) != null)
+            Student student = Normalize(rawStudent);
+            student.CreatedAt = now;
+            student.UpdatedAt = now;
+            string label = $"SV '{student.StudentId}' ({student.FullName})";
+
+            Dictionary<string, string> invalidFields = Validate(student, Catalog);
+            if (invalidFields.Count > 0)
             {
-                skipped++;
+                errors.Add($"{label}: {string.Join(" ", invalidFields.Values)}");
                 continue;
             }
+
+            StudentException? duplicate = FindDuplicate(student, idTree, nationalIds, emails);
+            if (duplicate != null)
+            {
+                errors.Add($"{label}: trùng {duplicate.Field} '{duplicate.Value}' với sinh viên đã có.");
+                continue;
+            }
+
             Insert(student);
             added.Add(student);
         }
-        if (added.Count == 0) return (0, skipped);
 
-        try { Save(); }
-        catch { foreach (var student in added) Remove(student); throw; }
-        return (added.Count, skipped);
+        if (added.Count == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            Save();
+        }
+        catch
+        {
+            foreach (Student student in added)
+            {
+                Remove(student);
+            }
+            throw;
+        }
+
+        return added.Count;
     }
 
-    /// <summary>Sửa hồ sơ. StudentId dùng để tìm và không đổi được.</summary>
     public void Update(Student student)
     {
-        student = Normalize(student); // chuẩn hóa trước để StudentId có khoảng trắng vẫn tìm được
-        var old = Find(student.StudentId) ?? throw new KeyNotFoundException($"Không có sinh viên {student.StudentId}.");
-        student = student with { CreatedAt = old.CreatedAt, UpdatedAt = DateTime.Now };
+        // Chuẩn hóa trước để StudentId có khoảng trắng vẫn tìm được
+        student = Normalize(student);
+
+        Student? old = Find(student.StudentId);
+        if (old == null)
+        {
+            throw new KeyNotFoundException($"Không có sinh viên {student.StudentId}.");
+        }
+
+        student.CreatedAt = old.CreatedAt;
+        student.UpdatedAt = DateTime.Now;
         Check(student);
 
-        if (student.NationalId != old.NationalId && nationalIds.Contains(student.NationalId))
-            throw new DuplicateKeyException(nameof(Student.NationalId), student.NationalId);
-        if (!student.Email.Equals(old.Email, StringComparison.OrdinalIgnoreCase) && emails.Contains(student.Email))
-            throw new DuplicateKeyException(nameof(Student.Email), student.Email);
+        bool nationalIdChanged = student.NationalId != old.NationalId;
+        if (nationalIdChanged && nationalIds.Contains(student.NationalId))
+        {
+            throw new StudentException(nameof(Student.NationalId), student.NationalId);
+        }
+
+        bool emailChanged = !student.Email.Equals(old.Email, StringComparison.OrdinalIgnoreCase);
+        if (emailChanged && emails.Contains(student.Email))
+        {
+            throw new StudentException(nameof(Student.Email), student.Email);
+        }
 
         Replace(old, student);
-        try { Save(); }
-        catch { Replace(student, old); throw; }
+        try
+        {
+            Save();
+        }
+        catch
+        {
+            Replace(student, old);
+            throw;
+        }
     }
 
-    /// <summary>Xóa theo StudentId. Trả về false nếu không có.</summary>
-    public bool Delete(string studentId)
+
+    public List<Student> FindByIdRange(string from, string to)
     {
-        var old = Find(studentId);
-        if (old == null) return false;
-
-        Remove(old);
-        try { Save(); }
-        catch { Insert(old); throw; }
-        return true;
+        return idTree.Range(MakeIdSample(from), MakeIdSample(to));
     }
 
-    // ---------- Tìm theo khoảng ----------
-
-    public List<Student> FindByIdRange(string from, string to) =>
-        byId.Range(from, to).Select(p => p.Value).ToList();
-
-    /// <summary>Xóa các sinh viên có StudentId trong [from, to]. Trả về số lượng đã xóa.</summary>
     public int DeleteByIdRange(string from, string to)
     {
-        var list = FindByIdRange(from, to); // lấy ra list trước rồi mới xóa
-        if (list.Count == 0) return 0;
-
-        foreach (var student in list) Remove(student);
-        try { Save(); }
-        catch { foreach (var student in list) Insert(student); throw; }
-        return list.Count;
+        return DeleteMany(FindByIdRange(from, to));
     }
 
-    public List<Student> FindByGpaRange(double min, double max) =>
-        byGpa.Range((min, ""), (max, "￿")).Select(p => p.Value).ToList();
-
-    // ---------- Thủ khoa, Top N, Lọc ----------
-
-    /// <summary>Sinh viên điểm cao nhất, null nếu chưa có ai.</summary>
-    public Student? TopStudent() => byGpa.Count == 0 ? null : byGpa.Max().Value;
-
-    /// <summary>Sinh viên điểm thấp nhất, null nếu chưa có ai.</summary>
-    public Student? LowestGpaStudent() => byGpa.Count == 0 ? null : byGpa.Min().Value;
-
-    /// <summary>N sinh viên điểm cao nhất, giảm dần.</summary>
-    public List<Student> TopN(int n) =>
-        byGpa.InOrderDescending().Take(n).Select(p => p.Value).ToList();
-
-    /// <summary>Lọc nhiều tiêu chí. Tiêu chí để trống/null thì bỏ qua.</summary>
-    public List<Student> Filter(string? fullName, string? className, string? faculty, Status? status, Grade? grade)
+    // Xóa nhiều sinh viên cùng lúc, chỉ lưu 1 lần. Mã không có trong cây thì bỏ qua. Lưu lỗi thì hoàn tác tất cả.
+    // Trả về số sinh viên đã xóa.
+    public int DeleteMany(List<Student> students)
     {
-        return GetAll().Where(s =>
-            (string.IsNullOrWhiteSpace(fullName) || s.FullName.Contains(fullName.Trim(), StringComparison.OrdinalIgnoreCase)) &&
-            (string.IsNullOrWhiteSpace(className) || s.ClassName.Equals(className.Trim(), StringComparison.OrdinalIgnoreCase)) &&
-            (string.IsNullOrWhiteSpace(faculty) || s.Faculty.Equals(faculty.Trim(), StringComparison.OrdinalIgnoreCase)) &&
-            (status == null || s.Status == status) &&
-            (grade == null || s.Grade == grade)).ToList();
+        List<Student> removed = new List<Student>();
+        foreach (Student student in students)
+        {
+            Student? old = Find(student.StudentId);
+            if (old != null)
+            {
+                Remove(old);
+                removed.Add(old);
+            }
+        }
+
+        if (removed.Count == 0)
+        {
+            return 0;
+        }
+
+        try
+        {
+            Save();
+        }
+        catch
+        {
+            foreach (Student old in removed)
+            {
+                Insert(old);
+            }
+            throw;
+        }
+        return removed.Count;
     }
 
-    // ---------- Hàm nội bộ ----------
+    // N sinh viên điểm cao nhất, giảm dần (bằng điểm thì mã SV nhỏ đứng trước). Cây chỉ sắp xếp theo mã SV nên phải sắp xếp lại danh sách.
+    public List<Student> TopN(int n)
+    {
+        List<Student> sorted = GetAll();
+        sorted.Sort(CompareGpaDescending);
 
-    private void Save() => repo.Save(GetAll());
+        if (sorted.Count > n)
+        {
+            sorted.RemoveRange(n, sorted.Count - n);
+        }
+        return sorted;
+    }
+
+    private static int CompareGpaDescending(Student a, Student b)
+    {
+        int result = b.Gpa.CompareTo(a.Gpa);
+        if (result != 0)
+        {
+            return result;
+        }
+        return string.CompareOrdinal(a.StudentId, b.StudentId);
+    }
+
+    // Lọc theo lớp, trạng thái, xếp loại. Tiêu chí null thì bỏ qua.
+    public List<Student> Filter(string? className, Status? status, Grade? grade)
+    {
+        List<Student> result = new List<Student>();
+
+        foreach (Student student in GetAll())
+        {
+            if (className != null && !student.ClassName.Equals(className, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (status != null && student.Status != status)
+            {
+                continue;
+            }
+
+            if (grade != null && student.Grade != grade)
+            {
+                continue;
+            }
+
+            result.Add(student);
+        }
+
+        return result;
+    }
+
+
+    public const string StudentIdPattern = @"^[0-9]+$";
+    public const string NationalIdPattern = @"^[0-9]{12}$";
+    public const string EmailPattern = @"^[^@\s]+@[^@\s]+\.[^@\s]+$";
+    public const string PhonePattern = @"^0[0-9]{9}$";
+
+    public const int MinAge = 15;
+    public const int MaxAge = 60;
+
+    public static Dictionary<string, string> Validate(Student student, Catalog catalog)
+    {
+        Dictionary<string, string> errors = new Dictionary<string, string>();
+
+        if (!Regex.IsMatch(student.StudentId, StudentIdPattern))
+        {
+            errors[nameof(Student.StudentId)] = "Mã SV chỉ gồm chữ số, ít nhất 1 chữ số.";
+        }
+
+        if (student.FullName.Length < 2 || student.FullName.Length > 100)
+        {
+            errors[nameof(Student.FullName)] = "Họ tên dài 2-100 ký tự.";
+        }
+
+        if (!IsAgeValid(student.BirthDate))
+        {
+            errors[nameof(Student.BirthDate)] = $"Tuổi phải từ {MinAge} đến {MaxAge}.";
+        }
+
+        if (!Enum.IsDefined(student.Gender))
+        {
+            errors[nameof(Student.Gender)] = "Giới tính không hợp lệ.";
+        }
+
+        if (!Regex.IsMatch(student.NationalId, NationalIdPattern))
+        {
+            errors[nameof(Student.NationalId)] = "CCCD gồm đúng 12 chữ số.";
+        }
+
+        if (!Regex.IsMatch(student.Email, EmailPattern))
+        {
+            errors[nameof(Student.Email)] = "Email không đúng định dạng.";
+        }
+
+        if (student.Phone != "" && !Regex.IsMatch(student.Phone, PhonePattern))
+        {
+            errors[nameof(Student.Phone)] = "Số điện thoại gồm 10 số, bắt đầu bằng 0.";
+        }
+
+        if (student.Address.Length > 255)
+        {
+            errors[nameof(Student.Address)] = "Địa chỉ tối đa 255 ký tự.";
+        }
+
+        if (student.Faculty == "")
+        {
+            errors[nameof(Student.Faculty)] = "Chưa chọn khoa.";
+        }
+        else if (!catalog.HasFaculty(student.Faculty))
+        {
+            errors[nameof(Student.Faculty)] = "Khoa không có trong danh mục.";
+        }
+
+        if (student.ClassName == "")
+        {
+            errors[nameof(Student.ClassName)] = "Chưa chọn lớp.";
+        }
+        else if (!errors.ContainsKey(nameof(Student.Faculty)) && !catalog.Has(student.Faculty, student.ClassName))
+        {
+            errors[nameof(Student.ClassName)] = "Lớp không thuộc khoa đã chọn.";
+        }
+
+        if (!Enum.IsDefined(student.Status))
+        {
+            errors[nameof(Student.Status)] = "Trạng thái không hợp lệ.";
+        }
+
+        if (double.IsNaN(student.Gpa) || student.Gpa <= 0)
+        {
+            errors[nameof(Student.Gpa)] = "Điểm TB phải lớn hơn 0.";
+        }
+
+        return errors;
+    }
+
+    private static bool IsAgeValid(DateTime birthDate)
+    {
+        DateTime today = DateTime.Today;
+        int age = today.Year - birthDate.Year;
+
+        // Chưa tới sinh nhật năm nay thì trừ đi 1 tuổi
+        if (birthDate.Date > today.AddYears(-age))
+        {
+            age--;
+        }
+
+        return age >= MinAge && age <= MaxAge;
+    }
+
+
+    private void Save()
+    {
+        repo.Save(GetAll());
+    }
 
     private void Check(Student student)
     {
-        var errors = StudentValidator.Validate(student, Catalog);
-        if (errors.Count > 0) throw new ValidationException(errors);
+        Dictionary<string, string> errors = Validate(student, Catalog);
+        if (errors.Count > 0)
+        {
+            throw new StudentException(errors);
+        }
+    }
+
+    // Sinh viên "mẫu" chỉ có StudentId, dùng để tìm trong cây theo mã.
+    private static Student MakeIdSample(string studentId)
+    {
+        return new Student { StudentId = studentId };
     }
 
     // Chuẩn hóa: bỏ khoảng trắng thừa, làm tròn điểm 2 chữ số
-    private static Student Normalize(Student student) => student with
+    private static Student Normalize(Student student)
     {
-        StudentId = student.StudentId.Trim(),
-        FullName = string.Join(' ', student.FullName.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)),
-        NationalId = student.NationalId.Trim(),
-        Email = student.Email.Trim(),
-        Phone = student.Phone.Trim(),
-        Address = student.Address.Trim(),
-        ClassName = student.ClassName.Trim(),
-        Faculty = student.Faculty.Trim(),
-        Gpa = Math.Round(student.Gpa, 2, MidpointRounding.AwayFromZero),
-    };
-
-    // Chèn vào cả 2 cây và 2 set
-    private void Insert(Student student) => Insert(student, byId, byGpa, nationalIds, emails);
-
-    private static void Insert(Student student, AvlTree<string, Student> byId,
-        AvlTree<(double Gpa, string StudentId), Student> byGpa, HashSet<string> nationalIds, HashSet<string> emails)
-    {
-        byId.Insert(student.StudentId, student);
-        byGpa.Insert(GpaKey(student), student);
-        nationalIds.Add(student.NationalId);
-        emails.Add(student.Email);
+        Student result = student.Copy();
+        result.StudentId = student.StudentId.Trim();
+        result.FullName = RemoveExtraSpaces(student.FullName);
+        result.NationalId = student.NationalId.Trim();
+        result.Email = student.Email.Trim();
+        result.Phone = student.Phone.Trim();
+        result.Address = student.Address.Trim();
+        result.ClassName = student.ClassName.Trim();
+        result.Faculty = student.Faculty.Trim();
+        result.Gpa = Math.Round(student.Gpa, 2, MidpointRounding.AwayFromZero);
+        return result;
     }
 
-    // Kiểm tra trùng StudentId, NationalId, Email. Trả về (tên trường, giá trị) bị trùng, không trùng thì null
-    private static (string Field, string Value)? FindDuplicate(Student student, AvlTree<string, Student> byId,
-        HashSet<string> nationalIds, HashSet<string> emails)
+    private static string RemoveExtraSpaces(string text)
     {
-        if (byId.TryGet(student.StudentId, out _)) return (nameof(Student.StudentId), student.StudentId);
-        if (nationalIds.Contains(student.NationalId)) return (nameof(Student.NationalId), student.NationalId);
-        if (emails.Contains(student.Email)) return (nameof(Student.Email), student.Email);
+        string[] words = text.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        return string.Join(" ", words);
+    }
+
+    private void Insert(Student student)
+    {
+        Insert(student, idTree, nationalIds, emails);
+    }
+
+    private static void Insert(
+        Student student,
+        AvlTree targetIdTree,
+        HashSet<string> nationalIdSet,
+        HashSet<string> emailSet)
+    {
+        targetIdTree.Insert(student);
+        nationalIdSet.Add(student.NationalId);
+        emailSet.Add(student.Email);
+    }
+
+    private static StudentException? FindDuplicate(
+        Student student,
+        AvlTree targetIdTree,
+        HashSet<string> nationalIdSet,
+        HashSet<string> emailSet)
+    {
+        if (targetIdTree.Find(student) != null)
+        {
+            return new StudentException(nameof(Student.StudentId), student.StudentId);
+        }
+
+        if (nationalIdSet.Contains(student.NationalId))
+        {
+            return new StudentException(nameof(Student.NationalId), student.NationalId);
+        }
+
+        if (emailSet.Contains(student.Email))
+        {
+            return new StudentException(nameof(Student.Email), student.Email);
+        }
+
         return null;
     }
 
     private void Remove(Student student)
     {
-        byId.Delete(student.StudentId);
-        byGpa.Delete(GpaKey(student));
+        idTree.Delete(student);
         nationalIds.Remove(student.NationalId);
         emails.Remove(student.Email);
     }
 
-    // Thay bản cũ bằng bản mới (cùng StudentId). Cây StudentId chỉ đổi giá trị, cây điểm xóa/chèn lại
+    // Thay bản cũ bằng bản mới (cùng StudentId): cây chỉ đổi dữ liệu của nút
     private void Replace(Student old, Student student)
     {
-        byId.TryUpdate(student.StudentId, student);
-        byGpa.Delete(GpaKey(old));
-        byGpa.Insert(GpaKey(student), student);
+        idTree.Update(student);
+
         nationalIds.Remove(old.NationalId);
         nationalIds.Add(student.NationalId);
+
         emails.Remove(old.Email);
         emails.Add(student.Email);
     }

@@ -22,25 +22,17 @@
     <SolidColorBrush x:Key="DisabledBrush" Color="#F3F4F6" />
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1B1B1B" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#616161" />
-    <SolidColorBrush x:Key="StatusBarBrush" Color="#F0F0F0" />
     <SolidColorBrush x:Key="WhiteBrush" Color="#FFFFFF" />
 
     <!-- ===== Chữ ===== -->
     <FontFamily x:Key="AppFont">Segoe UI</FontFamily>
     <FontFamily x:Key="IconFont">Segoe Fluent Icons, Segoe MDL2 Assets</FontFamily>
-    <sys:Double x:Key="FontSizeTitle">16</sys:Double>
     <sys:Double x:Key="FontSizeSection">13</sys:Double>
     <sys:Double x:Key="FontSizeBody">12</sys:Double>
     <sys:Double x:Key="FontSizeCaption">11</sys:Double>
 
     <!-- ===== Khoảng cách (lưới 4/8/12/16) và bo góc ===== -->
-    <sys:Double x:Key="Space4">4</sys:Double>
-    <sys:Double x:Key="Space8">8</sys:Double>
-    <sys:Double x:Key="Space12">12</sys:Double>
-    <sys:Double x:Key="Space16">16</sys:Double>
-    <CornerRadius x:Key="RadiusSmall">3</CornerRadius>
     <CornerRadius x:Key="RadiusCard">3</CornerRadius>
-    <DropShadowEffect x:Key="CardShadow" BlurRadius="8" ShadowDepth="1" Opacity="0.08" Color="#000000" />
 
     <!-- ===== Card ===== -->
     <Style x:Key="Card" TargetType="Border">
@@ -52,20 +44,11 @@
     </Style>
 
     <!-- ===== Chữ ===== -->
-    <Style x:Key="SectionTitle" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="{StaticResource FontSizeSection}" />
-        <Setter Property="FontWeight" Value="SemiBold" />
-    </Style>
     <Style x:Key="GroupTitle" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
         <Setter Property="Margin" Value="0,6,0,4" />
-    </Style>
-    <Style x:Key="FieldLabel" TargetType="TextBlock">
-        <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-        <Setter Property="Margin" Value="0,0,0,2" />
     </Style>
     <!-- Dòng lỗi dưới ô nhập: ẩn hẳn khi không có lỗi nên không chiếm chỗ -->
     <Style x:Key="Err" TargetType="TextBlock">
@@ -83,16 +66,6 @@
         <Setter Property="FontFamily" Value="{StaticResource IconFont}" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="Margin" Value="0,0,8,0" />
-    </Style>
-    <!-- Ô trong form: trái/phải cách nhau 8 -->
-    <Style x:Key="CellLeft" TargetType="StackPanel">
-        <Setter Property="Margin" Value="0,0,4,4" />
-    </Style>
-    <Style x:Key="CellRight" TargetType="StackPanel">
-        <Setter Property="Margin" Value="4,0,0,4" />
-    </Style>
-    <Style x:Key="CellFull" TargetType="StackPanel">
-        <Setter Property="Margin" Value="0,0,0,4" />
     </Style>
 
     <!-- ===== Nút ===== -->
@@ -134,34 +107,6 @@
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
                 <Setter Property="Background" Value="{StaticResource BorderBrushLight}" />
-            </Trigger>
-        </Style.Triggers>
-    </Style>
-
-    <Style x:Key="PrimaryButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-        <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
-        <Setter Property="Foreground" Value="{StaticResource WhiteBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource PrimaryHoverBrush}" />
-            </Trigger>
-            <Trigger Property="IsPressed" Value="True">
-                <Setter Property="Background" Value="{StaticResource PrimaryPressedBrush}" />
-            </Trigger>
-        </Style.Triggers>
-    </Style>
-
-    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource SecondaryButton}">
-        <Setter Property="Background" Value="{StaticResource DangerBrush}" />
-        <Setter Property="BorderBrush" Value="{StaticResource DangerBrush}" />
-        <Setter Property="Foreground" Value="{StaticResource WhiteBrush}" />
-        <Style.Triggers>
-            <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="{StaticResource DangerHoverBrush}" />
-            </Trigger>
-            <Trigger Property="IsPressed" Value="True">
-                <Setter Property="Background" Value="{StaticResource DangerPressedBrush}" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -421,10 +366,34 @@
         <Setter Property="Height" Value="26" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="BorderBrush" Value="{StaticResource BorderBrushLight}" />
-        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="BorderThickness" Value="0" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
         <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="ToolTip" Value="Bấm để sắp xếp, bấm lần nữa để đảo chiều" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <!-- Tiêu đề cột, không có biểu tượng sắp xếp -->
+                <ControlTemplate TargetType="DataGridColumnHeader">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" Padding="{TemplateBinding Padding}">
+                        <Grid>
+                            <DockPanel>
+                                <ContentPresenter VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                            </DockPanel>
+                            <!-- Thanh nắm ở mép phải để kéo đổi độ rộng cột -->
+                            <Thumb x:Name="PART_RightHeaderGripper" HorizontalAlignment="Right" Width="6" Background="Transparent" Cursor="SizeWE" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style TargetType="DataGridCell">
         <Setter Property="BorderThickness" Value="0" />
@@ -472,7 +441,7 @@
         <Setter Property="IsReadOnly" Value="True" />
         <Setter Property="AutoGenerateColumns" Value="False" />
         <Setter Property="CanUserAddRows" Value="False" />
-        <Setter Property="SelectionMode" Value="Single" />
+        <Setter Property="SelectionMode" Value="Extended" />
     </Style>
     <!-- Cột số căn phải; cột chữ dài cắt bằng dấu ... -->
     <Style x:Key="RightAligned" TargetType="TextBlock">

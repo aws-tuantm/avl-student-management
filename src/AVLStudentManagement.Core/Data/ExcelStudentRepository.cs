@@ -1,14 +1,13 @@
-using System.Globalization;
 using AVLStudentManagement.Core.Models;
+using AVLStudentManagement.Core.Services;
 using ClosedXML.Excel;
+using System.Globalization;
 
 namespace AVLStudentManagement.Core.Data;
 
-/// <summary>Đọc/ghi hồ sơ sinh viên trong file .xlsx (sheet SinhVien và DanhMuc).</summary>
-public sealed class ExcelStudentRepository : IStudentRepository
+public class ExcelStudentRepository : IStudentRepository
 {
-    // Tên sheet và tiêu đề cột trong file Excel giữ tiếng Việt để người dùng mở Excel đọc được.
-    // Đây là định dạng dữ liệu, không phải tên trong code. Chỉ khai báo ở đây, nơi khác dùng tên tiếng Anh.
+    // Tên sheet và cột giữ tiếng Việt để mở Excel đọc được.
     private const string StudentSheet = "SinhVien";
     private const string CatalogSheet = "DanhMuc";
 
@@ -27,191 +26,296 @@ public sealed class ExcelStudentRepository : IStudentRepository
     private const string CreatedAtColumn = "NgayTao";
     private const string UpdatedAtColumn = "NgayCapNhat";
 
-    private static readonly string[] Headers =
+    private static readonly string[] Headers = new string[]
     {
-        IdColumn, FullNameColumn, BirthDateColumn, GenderColumn, NationalIdColumn, EmailColumn, PhoneColumn,
-        AddressColumn, ClassColumn, FacultyColumn, StatusColumn, GpaColumn, CreatedAtColumn, UpdatedAtColumn,
+        IdColumn,
+        FullNameColumn,
+        BirthDateColumn,
+        GenderColumn,
+        NationalIdColumn,
+        EmailColumn,
+        PhoneColumn,
+        AddressColumn,
+        ClassColumn,
+        FacultyColumn,
+        StatusColumn,
+        GpaColumn,
+        CreatedAtColumn,
+        UpdatedAtColumn
     };
 
     private readonly string path;
-    private Catalog catalog = new(); // giữ lại để ghi trả khi Save
 
-    /// <summary>Số dòng thật trong file của từng SV ở lần Load gần nhất (bỏ qua dòng trống).</summary>
-    public IReadOnlyList<int>? RealRows { get; private set; }
+    public Catalog Catalog { get; private set; } = new Catalog();
+
+    public List<int>? RealRows { get; private set; }
 
     public ExcelStudentRepository(string path)
     {
         this.path = path;
     }
 
-    public (List<Student> Students, Catalog Catalog) Load()
+    public List<Student> Load()
     {
-        if (!File.Exists(path)) Save(Array.Empty<Student>()); // chưa có file thì tạo mới
+        if (!File.Exists(path))
+        {
+            Save(new List<Student>());
+        }
 
         // FileShare.ReadWrite để vẫn đọc được khi file đang mở trong Excel
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var workbook = new XLWorkbook(stream);
+        using FileStream stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+        using XLWorkbook workbook = new XLWorkbook(stream);
 
-        if (!workbook.TryGetWorksheet(StudentSheet, out var sheet))
-            throw new DataFormatException(1, StudentSheet, "Không tìm thấy sheet.");
+        IXLWorksheet sheet;
+        if (!workbook.TryGetWorksheet(StudentSheet, out sheet))
+        {
+            throw new StudentException(1, StudentSheet, "Không tìm thấy sheet.");
+        }
 
-        // Đọc cột theo tên header nên đổi thứ tự cột vẫn đúng
-        var columns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-        foreach (var cell in sheet.Row(1).CellsUsed()) columns[cell.GetString().Trim()] = cell.Address.ColumnNumber;
-        foreach (var header in Headers)
-            if (!columns.ContainsKey(header)) throw new DataFormatException(1, header, "Thiếu cột.");
+        // Đọc cột theo tên tiêu đề nên đổi thứ tự cột vẫn đúng
+        Dictionary<string, int> columns = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        foreach (IXLCell cell in sheet.Row(1).CellsUsed())
+        {
+            columns[cell.GetString().Trim()] = cell.Address.ColumnNumber;
+        }
 
-        var students = new List<Student>();
-        var rows = new List<int>();
-        int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 1;
+        foreach (string header in Headers)
+        {
+            if (!columns.ContainsKey(header))
+            {
+                throw new StudentException(1, header, "Thiếu cột.");
+            }
+        }
+
+        List<Student> students = new List<Student>();
+        List<int> rows = new List<int>();
+
+        int lastRow = 1;
+        IXLRow? lastUsedRow = sheet.LastRowUsed();
+        if (lastUsedRow != null)
+        {
+            lastRow = lastUsedRow.RowNumber();
+        }
+
         for (int row = 2; row <= lastRow; row++)
         {
-            if (sheet.Row(row).IsEmpty()) continue;
+            if (sheet.Row(row).IsEmpty())
+            {
+                continue;
+            }
             students.Add(ReadRow(sheet, row, columns));
             rows.Add(row);
         }
 
-        catalog = ReadCatalog(workbook);
+        Catalog = ReadCatalog(workbook);
         RealRows = rows;
-        return (students, catalog);
+        return students;
     }
 
-    public void Save(IEnumerable<Student> students)
+    public void Save(List<Student> students)
     {
-        var tempPath = path + ".tmp";
-        Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+        string tempPath = path + ".tmp";
+        string folder = Path.GetDirectoryName(Path.GetFullPath(path))!;
+        Directory.CreateDirectory(folder);
 
-        using (var workbook = new XLWorkbook())
+        using (XLWorkbook workbook = new XLWorkbook())
         {
             WriteStudents(workbook.AddWorksheet(StudentSheet), students);
             WriteCatalog(workbook.AddWorksheet(CatalogSheet));
-            using var file = File.Create(tempPath); // SaveAs(đường dẫn) không nhận đuôi .tmp nên ghi qua stream
+
+            using FileStream file = File.Create(tempPath);
             workbook.SaveAs(file);
         }
 
-        // Ghi ra .tmp trước, rồi thay vào file chính và giữ bản .bak
-        if (File.Exists(path)) File.Replace(tempPath, path, path + ".bak");
-        else File.Move(tempPath, path);
+        if (File.Exists(path))
+        {
+            File.Replace(tempPath, path, path + ".bak");
+        }
+        else
+        {
+            File.Move(tempPath, path);
+        }
     }
 
-    // ---------- Đọc ----------
 
     private static Student ReadRow(IXLWorksheet sheet, int row, Dictionary<string, int> columns)
     {
-        string Text(string name) => sheet.Cell(row, columns[name]).GetString().Trim();
-
-        return new Student
+        DateTime? birthDate = ReadDate(sheet.Cell(row, columns[BirthDateColumn]), row, BirthDateColumn);
+        if (birthDate == null)
         {
-            StudentId = Text(IdColumn),
-            FullName = Text(FullNameColumn),
-            BirthDate = ReadDate(sheet.Cell(row, columns[BirthDateColumn]), row, BirthDateColumn)
-                ?? throw new DataFormatException(row, BirthDateColumn, "Thiếu ngày sinh."),
-            Gender = ParseEnum<Gender>(Text(GenderColumn), EnumDisplay.ToDisplay, LegacyGender, row, GenderColumn),
-            NationalId = Text(NationalIdColumn),
-            Email = Text(EmailColumn),
-            Phone = Text(PhoneColumn),
-            Address = Text(AddressColumn),
-            ClassName = Text(ClassColumn),
-            Faculty = Text(FacultyColumn),
-            Status = ParseEnum<Status>(Text(StatusColumn), EnumDisplay.ToDisplay, LegacyStatus, row, StatusColumn),
+            throw new StudentException(row, BirthDateColumn, "Thiếu ngày sinh.");
+        }
+
+        DateTime? createdAt = ReadDate(sheet.Cell(row, columns[CreatedAtColumn]), row, CreatedAtColumn);
+        if (createdAt == null)
+        {
+            createdAt = DateTime.Now;
+        }
+
+        DateTime? updatedAt = ReadDate(sheet.Cell(row, columns[UpdatedAtColumn]), row, UpdatedAtColumn);
+        if (updatedAt == null)
+        {
+            updatedAt = DateTime.Now;
+        }
+
+        Student student = new Student
+        {
+            StudentId = ReadText(sheet, row, columns, IdColumn),
+            FullName = ReadText(sheet, row, columns, FullNameColumn),
+            BirthDate = birthDate.Value,
+            Gender = ReadGender(ReadText(sheet, row, columns, GenderColumn), row),
+            NationalId = ReadText(sheet, row, columns, NationalIdColumn),
+            Email = ReadText(sheet, row, columns, EmailColumn),
+            Phone = ReadText(sheet, row, columns, PhoneColumn),
+            Address = ReadText(sheet, row, columns, AddressColumn),
+            ClassName = ReadText(sheet, row, columns, ClassColumn),
+            Faculty = ReadText(sheet, row, columns, FacultyColumn),
+            Status = ReadStatus(ReadText(sheet, row, columns, StatusColumn), row),
             Gpa = ReadDouble(sheet.Cell(row, columns[GpaColumn]), row, GpaColumn),
-            // Hai cột audit có thể để trống thì lấy giờ hiện tại
-            CreatedAt = ReadDate(sheet.Cell(row, columns[CreatedAtColumn]), row, CreatedAtColumn) ?? DateTime.Now,
-            UpdatedAt = ReadDate(sheet.Cell(row, columns[UpdatedAtColumn]), row, UpdatedAtColumn) ?? DateTime.Now,
+            CreatedAt = createdAt.Value,
+            UpdatedAt = updatedAt.Value
         };
+        return student;
+    }
+
+    private static string ReadText(IXLWorksheet sheet, int row, Dictionary<string, int> columns, string columnName)
+    {
+        return sheet.Cell(row, columns[columnName]).GetString().Trim();
     }
 
     private static DateTime? ReadDate(IXLCell cell, int row, string column)
     {
-        if (cell.IsEmpty()) return null;
-        if (cell.DataType == XLDataType.DateTime) return cell.GetDateTime();
-        if (DateTime.TryParse(cell.GetString(), new CultureInfo("vi-VN"), DateTimeStyles.None, out var date)) return date;
-        throw new DataFormatException(row, column, $"'{cell.GetString()}' không phải ngày hợp lệ.");
+        if (cell.IsEmpty())
+        {
+            return null;
+        }
+
+        if (cell.DataType == XLDataType.DateTime)
+        {
+            return cell.GetDateTime();
+        }
+
+        DateTime date;
+        if (DateTime.TryParse(cell.GetString(), new CultureInfo("vi-VN"), DateTimeStyles.None, out date))
+        {
+            return date;
+        }
+
+        throw new StudentException(row, column, $"'{cell.GetString()}' không phải ngày hợp lệ.");
     }
 
     private static double ReadDouble(IXLCell cell, int row, string column)
     {
-        if (cell.DataType == XLDataType.Number) return cell.GetDouble();
-        if (double.TryParse(cell.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var value)) return value;
-        throw new DataFormatException(row, column, $"'{cell.GetString()}' không phải số.");
+        if (cell.DataType == XLDataType.Number)
+        {
+            return cell.GetDouble();
+        }
+
+        double value;
+        if (double.TryParse(cell.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out value))
+        {
+            return value;
+        }
+
+        throw new StudentException(row, column, $"'{cell.GetString()}' không phải số.");
     }
 
-    // Tên cũ của enum trong file Excel (file cũ vẫn đọc được, Status vẫn được ghi bằng tên cũ)
-    private static string LegacyGender(Gender value) => value switch
+    private static Gender ReadGender(string text, int row)
     {
-        Gender.Male => "Nam",
-        Gender.Female => "Nu",
-        _ => "Khac",
-    };
-
-    private static string LegacyStatus(Status value) => value switch
-    {
-        Status.Studying => "DangHoc",
-        Status.OnLeave => "BaoLuu",
-        Status.Graduated => "DaTotNghiep",
-        _ => "ThoiHoc",
-    };
-
-    // Chấp nhận tên enum mới (Studying), tên cũ (DangHoc) hoặc nhãn tiếng Việt (Đang học)
-    private static T ParseEnum<T>(string text, Func<T, string> display, Func<T, string> legacy, int row, string column)
-        where T : struct, Enum
-    {
-        foreach (var value in Enum.GetValues<T>())
-            if (text.Equals(value.ToString(), StringComparison.OrdinalIgnoreCase) ||
-                text.Equals(display(value), StringComparison.OrdinalIgnoreCase) ||
-                text.Equals(legacy(value), StringComparison.OrdinalIgnoreCase))
-                return value;
-        throw new DataFormatException(row, column, $"Giá trị '{text}' không hợp lệ.");
+        foreach (Gender gender in Enum.GetValues<Gender>())
+        {
+            if (text.Equals(gender.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                text.Equals(gender.ToDisplay(), StringComparison.OrdinalIgnoreCase))
+            {
+                return gender;
+            }
+        }
+        throw new StudentException(row, GenderColumn, $"Giá trị '{text}' không hợp lệ.");
     }
 
-    // Sheet DanhMuc: cột A = Khoa, cột B = Lop, dòng 1 là header
+    private static Status ReadStatus(string text, int row)
+    {
+        foreach (Status status in Enum.GetValues<Status>())
+        {
+            if (text.Equals(status.ToString(), StringComparison.OrdinalIgnoreCase) ||
+                text.Equals(status.ToDisplay(), StringComparison.OrdinalIgnoreCase))
+            {
+                return status;
+            }
+        }
+        throw new StudentException(row, StatusColumn, $"Giá trị '{text}' không hợp lệ.");
+    }
+
     private static Catalog ReadCatalog(XLWorkbook workbook)
     {
-        var result = new Catalog();
-        if (!workbook.TryGetWorksheet(CatalogSheet, out var sheet)) return result;
+        Catalog result = new Catalog();
 
-        int lastRow = sheet.LastRowUsed()?.RowNumber() ?? 1;
+        IXLWorksheet sheet;
+        if (!workbook.TryGetWorksheet(CatalogSheet, out sheet))
+        {
+            return result;
+        }
+
+        int lastRow = 1;
+        IXLRow? lastUsedRow = sheet.LastRowUsed();
+        if (lastUsedRow != null)
+        {
+            lastRow = lastUsedRow.RowNumber();
+        }
+
         for (int row = 2; row <= lastRow; row++)
         {
             string faculty = sheet.Cell(row, 1).GetString().Trim();
             string className = sheet.Cell(row, 2).GetString().Trim();
-            if (faculty != "" && className != "") result.Add(faculty, className);
+            if (faculty != "" && className != "")
+            {
+                result.Add(faculty, className);
+            }
         }
         return result;
     }
 
-    // ---------- Ghi ----------
 
-    private static void WriteStudents(IXLWorksheet sheet, IEnumerable<Student> students)
+    private static void WriteStudents(IXLWorksheet sheet, List<Student> students)
     {
-        for (int i = 0; i < Headers.Length; i++) sheet.Cell(1, i + 1).Value = Headers[i];
+        for (int i = 0; i < Headers.Length; i++)
+        {
+            sheet.Cell(1, i + 1).Value = Headers[i];
+        }
         sheet.Row(1).Style.Font.Bold = true;
 
-        int row = 2;
-        foreach (var student in students)
+        List<object[]> rows = new List<object[]>();
+        foreach (Student student in students)
         {
-            sheet.Cell(row, 1).Value = student.StudentId;
-            sheet.Cell(row, 2).Value = student.FullName;
-            sheet.Cell(row, 3).Value = student.BirthDate;
-            sheet.Cell(row, 4).Value = student.Gender.ToDisplay();
-            sheet.Cell(row, 5).Value = student.NationalId;
-            sheet.Cell(row, 6).Value = student.Email;
-            sheet.Cell(row, 7).Value = student.Phone;
-            sheet.Cell(row, 8).Value = student.Address;
-            sheet.Cell(row, 9).Value = student.ClassName;
-            sheet.Cell(row, 10).Value = student.Faculty;
-            sheet.Cell(row, 11).Value = LegacyStatus(student.Status);
-            sheet.Cell(row, 12).Value = student.Gpa;
-            sheet.Cell(row, 13).Value = student.CreatedAt;
-            sheet.Cell(row, 14).Value = student.UpdatedAt;
-            row++;
+            rows.Add(new object[]
+            {
+                student.StudentId,
+                student.FullName,
+                student.BirthDate,
+                student.Gender.ToDisplay(),
+                student.NationalId,
+                student.Email,
+                student.Phone,
+                student.Address,
+                student.ClassName,
+                student.Faculty,
+                student.Status.ToDisplay(),
+                student.Gpa,
+                student.CreatedAt,
+                student.UpdatedAt
+            });
         }
+        sheet.Cell(2, 1).InsertData(rows);
 
         sheet.Column(3).Style.DateFormat.Format = "dd/MM/yyyy";
         sheet.Column(12).Style.NumberFormat.Format = "0.00";
         sheet.Column(13).Style.DateFormat.Format = "dd/MM/yyyy HH:mm:ss";
         sheet.Column(14).Style.DateFormat.Format = "dd/MM/yyyy HH:mm:ss";
-        sheet.Columns().AdjustToContents();
+        double[] widths = { 12, 26, 12, 10, 15, 30, 13, 60, 11, 30, 14, 8, 20, 20 };
+        for (int i = 0; i < widths.Length; i++)
+        {
+            sheet.Column(i + 1).Width = widths[i];
+        }
     }
 
     private void WriteCatalog(IXLWorksheet sheet)
@@ -221,13 +325,15 @@ public sealed class ExcelStudentRepository : IStudentRepository
         sheet.Row(1).Style.Font.Bold = true;
 
         int row = 2;
-        foreach (var faculty in catalog.Faculties)
-            foreach (var className in catalog.ClassesOf(faculty))
+        foreach (string faculty in Catalog.Faculties)
+        {
+            foreach (string className in Catalog.ClassesOf(faculty))
             {
                 sheet.Cell(row, 1).Value = faculty;
                 sheet.Cell(row, 2).Value = className;
                 row++;
             }
+        }
         sheet.Columns().AdjustToContents();
     }
 }

@@ -1,31 +1,68 @@
 namespace AVLStudentManagement.Core.Models;
 
-/// <summary>Hồ sơ sinh viên. Bất biến: muốn sửa thì tạo bản mới bằng <c>with</c>.</summary>
-public sealed record Student
+public class Student
 {
-    public string StudentId { get; init; } = "";
-    public string FullName { get; init; } = "";
-    public DateTime BirthDate { get; init; }
-    public Gender Gender { get; init; }
-    public string NationalId { get; init; } = "";
-    public string Email { get; init; } = "";
-    public string Phone { get; init; } = "";
-    public string Address { get; init; } = "";
-    public string ClassName { get; init; } = "";
-    public string Faculty { get; init; } = "";
-    public Status Status { get; init; }
-    public double Gpa { get; init; }
-    public DateTime CreatedAt { get; init; }
-    public DateTime UpdatedAt { get; init; }
+    public string StudentId { get; set; } = "";
+    public string FullName { get; set; } = "";
+    public DateTime BirthDate { get; set; }
+    public Gender Gender { get; set; }
+    public string NationalId { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string Phone { get; set; } = "";
+    public string Address { get; set; } = "";
+    public string ClassName { get; set; } = "";
+    public string Faculty { get; set; } = "";
+    public Status Status { get; set; }
+    public double Gpa { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
-    /// <summary>Xếp loại tính từ Gpa (thang 4), không lưu.</summary>
-    public Grade Grade => Gpa switch
+    // Xếp loại tính từ Gpa
+    public Grade Grade
     {
-        >= 3.6 => Grade.Excellent,
-        >= 3.2 => Grade.VeryGood,
-        >= 2.5 => Grade.Good,
-        >= 2.0 => Grade.Average,
-        >= 1.0 => Grade.Weak,
-        _ => Grade.Poor,
-    };
+        get
+        {
+            if (Gpa >= 9.0)
+            {
+                return Grade.Excellent;
+            }
+            if (Gpa >= 8.0)
+            {
+                return Grade.VeryGood;
+            }
+            if (Gpa >= 7.0)
+            {
+                return Grade.Good;
+            }
+            if (Gpa >= 5.0)
+            {
+                return Grade.Average;
+            }
+            if (Gpa >= 4.0)
+            {
+                return Grade.Weak;
+            }
+            return Grade.Poor;
+        }
+    }
+
+    public Student Copy()
+    {
+        Student copy = new Student();
+        copy.StudentId = StudentId;
+        copy.FullName = FullName;
+        copy.BirthDate = BirthDate;
+        copy.Gender = Gender;
+        copy.NationalId = NationalId;
+        copy.Email = Email;
+        copy.Phone = Phone;
+        copy.Address = Address;
+        copy.ClassName = ClassName;
+        copy.Faculty = Faculty;
+        copy.Status = Status;
+        copy.Gpa = Gpa;
+        copy.CreatedAt = CreatedAt;
+        copy.UpdatedAt = UpdatedAt;
+        return copy;
+    }
 }

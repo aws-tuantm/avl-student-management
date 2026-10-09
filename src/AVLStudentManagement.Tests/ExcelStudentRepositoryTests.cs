@@ -1,5 +1,6 @@
 using AVLStudentManagement.Core.Data;
 using AVLStudentManagement.Core.Models;
+using AVLStudentManagement.Core.Services;
 using ClosedXML.Excel;
 
 namespace AVLStudentManagement.Tests;
@@ -22,7 +23,7 @@ public class ExcelStudentRepositoryTests
     [TestCleanup]
     public void Cleanup()
     {
-        try { Directory.Delete(dir, true); } catch { /* bỏ qua */ }
+        try { Directory.Delete(dir, true); } catch { } // bỏ qua
     }
 
     private static Student MakeStudent(string id = "00123456") => new()
@@ -55,19 +56,19 @@ public class ExcelStudentRepositoryTests
     public void SaveThenLoad_DataIsCorrect()
     {
         var original = MakeStudent();
-        new ExcelStudentRepository(file).Save(new[] { original, MakeStudent("20240002") with { NationalId = "001203000124", Email = "b@x.vn" } });
+        new ExcelStudentRepository(file).Save(new List<Student> { original, MakeStudent("20240002").Change(s => { s.NationalId = "001203000124"; s.Email = "b@x.vn"; }) });
 
-        var (list, _) = new ExcelStudentRepository(file).Load();
+        var list = new ExcelStudentRepository(file).Load();
 
         Assert.AreEqual(2, list.Count);
-        Assert.AreEqual(original, list[0]); // record so sánh từng trường
+        TestHelpers.AssertSame(original, list[0]); // so sánh từng trường
     }
 
     [TestMethod]
     public void StudentId_LeadingZeros_And_Phone_ArePreserved()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent() });
-        var student = new ExcelStudentRepository(file).Load().Students[0];
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent() });
+        var student = new ExcelStudentRepository(file).Load()[0];
 
         Assert.AreEqual("00123456", student.StudentId);
         Assert.AreEqual("0901234567", student.Phone);
@@ -77,8 +78,8 @@ public class ExcelStudentRepositoryTests
     [TestMethod]
     public void VietnameseAccents_ArePreserved()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent() });
-        var student = new ExcelStudentRepository(file).Load().Students[0];
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent() });
+        var student = new ExcelStudentRepository(file).Load()[0];
 
         Assert.AreEqual("Nguyễn Thị Thùy Dương", student.FullName);
         Assert.AreEqual("12 Lê Lợi, Quận 1, TP. Hồ Chí Minh", student.Address);
@@ -89,7 +90,9 @@ public class ExcelStudentRepositoryTests
     [TestMethod]
     public void MissingFile_LoadReturnsEmpty_AndCreatesFile()
     {
-        var (list, catalog) = new ExcelStudentRepository(file).Load();
+        var repository = new ExcelStudentRepository(file);
+        var list = repository.Load();
+        var catalog = repository.Catalog;
 
         Assert.AreEqual(0, list.Count);
         Assert.AreEqual(0, catalog.Faculties.Count());
@@ -99,7 +102,7 @@ public class ExcelStudentRepositoryTests
     [TestMethod]
     public void MissingFile_SaveCreatesFile()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent() });
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent() });
 
         Assert.IsTrue(File.Exists(file));
         Assert.IsFalse(File.Exists(file + ".bak")); // lần đầu chưa có bản sao
@@ -110,46 +113,44 @@ public class ExcelStudentRepositoryTests
     public void SecondSave_CreatesBakFile()
     {
         var repo = new ExcelStudentRepository(file);
-        repo.Save(new[] { MakeStudent() });
-        repo.Save(new[] { MakeStudent(), MakeStudent("20240002") with { NationalId = "001203000124", Email = "b@x.vn" } });
+        repo.Save(new List<Student> { MakeStudent() });
+        repo.Save(new List<Student> { MakeStudent(), MakeStudent("20240002").Change(s => { s.NationalId = "001203000124"; s.Email = "b@x.vn"; }) });
 
         Assert.IsTrue(File.Exists(file + ".bak"));
         // .bak là bản cũ (1 sinh viên), file chính là bản mới (2 sinh viên)
-        Assert.AreEqual(2, repo.Load().Students.Count);
+        Assert.AreEqual(2, repo.Load().Count);
         var old = Path.Combine(dir, "old.xlsx");
         File.Copy(file + ".bak", old);
-        Assert.AreEqual(1, new ExcelStudentRepository(old).Load().Students.Count);
+        Assert.AreEqual(1, new ExcelStudentRepository(old).Load().Count);
     }
 
     [TestMethod]
     public void MissingRequiredColumn_ThrowsWithColumn()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent() });
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent() });
         Edit(sheet => sheet.Cell(1, 5).Value = "OtherColumn"); // cột 5 là CCCD (header Excel)
 
-        var ex = Assert.ThrowsExactly<DataFormatException>(() => new ExcelStudentRepository(file).Load());
-        Assert.AreEqual("CCCD", ex.Column);
+        var ex = Assert.ThrowsExactly<StudentException>(() => new ExcelStudentRepository(file).Load());
+        StringAssert.Contains(ex.Message, "cột CCCD");
     }
 
     [TestMethod]
     public void BadBirthDate_ThrowsWithRow()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent(), MakeStudent("20240002") });
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent(), MakeStudent("20240002") });
         Edit(sheet => sheet.Cell(3, 3).Value = "không phải ngày"); // dòng 3, cột BirthDate
 
-        var ex = Assert.ThrowsExactly<DataFormatException>(() => new ExcelStudentRepository(file).Load());
-        Assert.AreEqual(3, ex.Row);
-        Assert.AreEqual("NgaySinh", ex.Column);
+        var ex = Assert.ThrowsExactly<StudentException>(() => new ExcelStudentRepository(file).Load());
+        StringAssert.Contains(ex.Message, "Dòng 3, cột NgaySinh");
     }
 
     [TestMethod]
     public void BadGpa_ThrowsWithRow()
     {
-        new ExcelStudentRepository(file).Save(new[] { MakeStudent() });
+        new ExcelStudentRepository(file).Save(new List<Student> { MakeStudent() });
         Edit(sheet => sheet.Cell(2, 12).Value = "abc"); // dòng 2, cột Gpa
 
-        var ex = Assert.ThrowsExactly<DataFormatException>(() => new ExcelStudentRepository(file).Load());
-        Assert.AreEqual(2, ex.Row);
-        Assert.AreEqual("DiemTB", ex.Column);
+        var ex = Assert.ThrowsExactly<StudentException>(() => new ExcelStudentRepository(file).Load());
+        StringAssert.Contains(ex.Message, "Dòng 2, cột DiemTB");
     }
 }

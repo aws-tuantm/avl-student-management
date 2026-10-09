@@ -1,258 +1,341 @@
+using AVLStudentManagement.Core.Models;
+
 namespace AVLStudentManagement.Core.DataStructures;
 
-/// <summary>Một nút trong cây AVL.</summary>
-public sealed class AvlNode<TKey, TValue>
+public class AvlNode
 {
-    public TKey Key { get; internal set; }
-    public TValue Value { get; internal set; }
-    public AvlNode<TKey, TValue>? Left { get; internal set; }
-    public AvlNode<TKey, TValue>? Right { get; internal set; }
+    public Student Data { get; set; }
+    public AvlNode? Left { get; set; }
+    public AvlNode? Right { get; set; }
+    public int Height { get; set; }
 
-    /// <summary>Chiều cao của nút. Nút lá = 1, nút rỗng (null) = 0.</summary>
-    public int Height { get; internal set; } = 1;
-
-    /// <summary>Hệ số cân bằng = cao(trái) - cao(phải). Cây AVL luôn nằm trong khoảng -1..1.</summary>
-    public int BalanceFactor => (Left?.Height ?? 0) - (Right?.Height ?? 0);
-
-    public AvlNode(TKey key, TValue value)
+    public AvlNode(Student data)
     {
-        Key = key;
-        Value = value;
-    }
-}
-
-/// <summary>Cây nhị phân tìm kiếm tự cân bằng AVL. Khóa không được trùng.</summary>
-public sealed class AvlTree<TKey, TValue>
-{
-    private readonly IComparer<TKey> comparer;
-
-    public AvlNode<TKey, TValue>? Root { get; private set; }
-    public int Count { get; private set; }
-    public int Height => Root?.Height ?? 0;
-
-    /// <summary>Tổng số phép xoay đã thực hiện (dùng để đo hiệu năng).</summary>
-    public int RotationCount { get; private set; }
-
-    public AvlTree(IComparer<TKey>? comparer = null)
-    {
-        this.comparer = comparer ?? Comparer<TKey>.Default;
+        Data = data;
+        Left = null;
+        Right = null;
+        Height = 1;
     }
 
-    // ---------- Thêm / Xóa / Sửa ----------
-
-    /// <summary>Thêm một phần tử. Trả về false nếu khóa đã tồn tại.</summary>
-    public bool Insert(TKey key, TValue value)
+    // Hệ số cân bằng = cao(trái) - cao(phải). Cây AVL luôn nằm trong khoảng -1..1.
+    public int BalanceFactor
     {
-        bool added = false;
-        Root = Insert(Root, key, value, ref added);
-        if (added) Count++;
-        return added;
+        get { return GetHeight(Left) - GetHeight(Right); }
     }
 
-    /// <summary>Xóa phần tử theo khóa. Trả về false nếu không tìm thấy.</summary>
-    public bool Delete(TKey key)
-    {
-        bool removed = false;
-        Root = Delete(Root, key, ref removed);
-        if (removed) Count--;
-        return removed;
-    }
-
-    /// <summary>Thay giá trị của một khóa đã có. Cấu trúc cây không đổi.</summary>
-    public bool TryUpdate(TKey key, TValue value)
-    {
-        var node = FindNode(key);
-        if (node == null) return false;
-        node.Value = value;
-        return true;
-    }
-
-    // ---------- Tìm kiếm ----------
-
-    public bool TryGet(TKey key, out TValue value)
-    {
-        var node = FindNode(key);
-        value = node != null ? node.Value : default!;
-        return node != null;
-    }
-
-    /// <summary>Phần tử nhỏ nhất (đi hết về bên trái).</summary>
-    public KeyValuePair<TKey, TValue> Min()
-    {
-        if (Root == null) throw new InvalidOperationException("Cây đang rỗng.");
-        return ToPair(MinNode(Root));
-    }
-
-    /// <summary>Phần tử lớn nhất (đi hết về bên phải).</summary>
-    public KeyValuePair<TKey, TValue> Max()
-    {
-        if (Root == null) throw new InvalidOperationException("Cây đang rỗng.");
-        var node = Root;
-        while (node.Right != null) node = node.Right;
-        return ToPair(node);
-    }
-
-    /// <summary>Các phần tử có khóa trong đoạn [from, to], theo thứ tự tăng dần.</summary>
-    public IEnumerable<KeyValuePair<TKey, TValue>> Range(TKey from, TKey to)
-    {
-        var stack = new Stack<AvlNode<TKey, TValue>>();
-        var node = Root;
-
-        while (node != null || stack.Count > 0)
-        {
-            // Đi xuống trái, nhưng bỏ qua những nút nhỏ hơn "from"
-            while (node != null)
-            {
-                if (comparer.Compare(node.Key, from) >= 0)
-                {
-                    stack.Push(node);
-                    node = node.Left;
-                }
-                else
-                {
-                    node = node.Right;
-                }
-            }
-
-            if (stack.Count == 0) yield break;
-
-            node = stack.Pop();
-            if (comparer.Compare(node.Key, to) > 0) yield break; // đã vượt quá "to" thì dừng hẳn
-            yield return ToPair(node);
-            node = node.Right;
-        }
-    }
-
-    // ---------- Duyệt cây ----------
-
-    /// <summary>Trái - Gốc - Phải: kết quả tăng dần theo khóa.</summary>
-    public IEnumerable<KeyValuePair<TKey, TValue>> InOrder() => Walk(ascending: true);
-
-    /// <summary>Phải - Gốc - Trái: kết quả giảm dần theo khóa.</summary>
-    public IEnumerable<KeyValuePair<TKey, TValue>> InOrderDescending() => Walk(ascending: false);
-
-    // Duyệt giữa bằng stack. ascending = true thì đi trái trước, false thì đi phải trước
-    private IEnumerable<KeyValuePair<TKey, TValue>> Walk(bool ascending)
-    {
-        var stack = new Stack<AvlNode<TKey, TValue>>();
-        var node = Root;
-
-        while (node != null || stack.Count > 0)
-        {
-            while (node != null)
-            {
-                stack.Push(node);
-                node = ascending ? node.Left : node.Right;
-            }
-            node = stack.Pop();
-            yield return ToPair(node);
-            node = ascending ? node.Right : node.Left;
-        }
-    }
-
-    /// <summary>Gốc - Trái - Phải.</summary>
-    public IEnumerable<KeyValuePair<TKey, TValue>> PreOrder()
-    {
-        var stack = new Stack<AvlNode<TKey, TValue>>();
-        if (Root != null) stack.Push(Root);
-
-        while (stack.Count > 0)
-        {
-            var node = stack.Pop();
-            yield return ToPair(node);
-            // Đẩy phải trước để trái được lấy ra trước
-            if (node.Right != null) stack.Push(node.Right);
-            if (node.Left != null) stack.Push(node.Left);
-        }
-    }
-
-    /// <summary>Trái - Phải - Gốc.</summary>
-    public IEnumerable<KeyValuePair<TKey, TValue>> PostOrder()
-    {
-        // Lấy thứ tự Gốc - Phải - Trái rồi đảo ngược lại sẽ ra Trái - Phải - Gốc
-        var work = new Stack<AvlNode<TKey, TValue>>();
-        var reversed = new Stack<AvlNode<TKey, TValue>>();
-        if (Root != null) work.Push(Root);
-
-        while (work.Count > 0)
-        {
-            var node = work.Pop();
-            reversed.Push(node);
-            if (node.Left != null) work.Push(node.Left);
-            if (node.Right != null) work.Push(node.Right);
-        }
-
-        foreach (var node in reversed) yield return ToPair(node);
-    }
-
-    // ---------- Hàm nội bộ ----------
-
-    private AvlNode<TKey, TValue> Insert(AvlNode<TKey, TValue>? node, TKey key, TValue value, ref bool added)
+    public static int GetHeight(AvlNode? node)
     {
         if (node == null)
         {
-            added = true;
-            return new AvlNode<TKey, TValue>(key, value);
+            return 0;
         }
+        return node.Height;
+    }
+}
 
-        int cmp = comparer.Compare(key, node.Key);
-        if (cmp < 0) node.Left = Insert(node.Left, key, value, ref added);
-        else if (cmp > 0) node.Right = Insert(node.Right, key, value, ref added);
-        else return node; // khóa trùng: không làm gì
+// Cây AVL chứa sinh viên, khóa là mã sinh viên (StudentId), không cho trùng khóa.
+public class AvlTree
+{
+    public AvlNode? Root { get; private set; }
+    public int Count { get; private set; }
 
-        return Rebalance(node);
+    public int RotationCount { get; private set; }
+
+    public AvlTree()
+    {
+        Root = null;
+        Count = 0;
+        RotationCount = 0;
     }
 
-    private AvlNode<TKey, TValue>? Delete(AvlNode<TKey, TValue>? node, TKey key, ref bool removed)
+    public int Height
     {
-        if (node == null) return null;
+        get { return AvlNode.GetHeight(Root); }
+    }
 
-        int cmp = comparer.Compare(key, node.Key);
-        if (cmp < 0) node.Left = Delete(node.Left, key, ref removed);
-        else if (cmp > 0) node.Right = Delete(node.Right, key, ref removed);
+
+    // Thêm một sinh viên. Trả về false nếu khóa đã tồn tại.
+    public bool Insert(Student student)
+    {
+        if (Find(student) != null)
+        {
+            return false;
+        }
+
+        Root = InsertNode(Root, student);
+        Count++;
+        return true;
+    }
+
+    public bool Delete(Student sample)
+    {
+        if (Find(sample) == null)
+        {
+            return false;
+        }
+
+        Root = DeleteNode(Root, sample);
+        Count--;
+        return true;
+    }
+
+    // Thay dữ liệu của sinh viên cùng khóa, cấu trúc cây không đổi.
+    public bool Update(Student student)
+    {
+        AvlNode? node = FindNode(student);
+        if (node == null)
+        {
+            return false;
+        }
+
+        node.Data = student;
+        return true;
+    }
+
+
+    // Tìm sinh viên có cùng khóa với sample, không có thì trả về null.
+    public Student? Find(Student sample)
+    {
+        AvlNode? node = FindNode(sample);
+        if (node == null)
+        {
+            return null;
+        }
+        return node.Data;
+    }
+
+    public Student? Min()
+    {
+        if (Root == null)
+        {
+            return null;
+        }
+        return MinNode(Root).Data;
+    }
+
+    public Student? Max()
+    {
+        if (Root == null)
+        {
+            return null;
+        }
+
+        AvlNode node = Root;
+        while (node.Right != null)
+        {
+            node = node.Right;
+        }
+        return node.Data;
+    }
+
+    // Các sinh viên có khóa trong đoạn [from, to], theo thứ tự tăng dần.
+    public List<Student> Range(Student from, Student to)
+    {
+        List<Student> result = new List<Student>();
+        CollectRange(Root, from, to, result);
+        return result;
+    }
+
+    // Đệ quy an toàn vì cây AVL luôn thấp (khoảng 45 tầng cho 1 triệu sinh viên).
+
+    // Trái - Gốc - Phải: kết quả tăng dần theo khóa.
+    public List<Student> InOrder()
+    {
+        List<Student> result = new List<Student>();
+        CollectInOrder(Root, result);
+        return result;
+    }
+
+    // Gốc - Trái - Phải.
+    public List<Student> PreOrder()
+    {
+        List<Student> result = new List<Student>();
+        CollectPreOrder(Root, result);
+        return result;
+    }
+
+    // Trái - Phải - Gốc.
+    public List<Student> PostOrder()
+    {
+        List<Student> result = new List<Student>();
+        CollectPostOrder(Root, result);
+        return result;
+    }
+
+    private void CollectInOrder(AvlNode? node, List<Student> result)
+    {
+        if (node == null)
+        {
+            return;
+        }
+        CollectInOrder(node.Left, result);
+        result.Add(node.Data);
+        CollectInOrder(node.Right, result);
+    }
+
+    private void CollectPreOrder(AvlNode? node, List<Student> result)
+    {
+        if (node == null)
+        {
+            return;
+        }
+        result.Add(node.Data);
+        CollectPreOrder(node.Left, result);
+        CollectPreOrder(node.Right, result);
+    }
+
+    private void CollectPostOrder(AvlNode? node, List<Student> result)
+    {
+        if (node == null)
+        {
+            return;
+        }
+        CollectPostOrder(node.Left, result);
+        CollectPostOrder(node.Right, result);
+        result.Add(node.Data);
+    }
+
+    // Chỉ đi vào nhánh có thể chứa kết quả, nhờ vậy không phải duyệt hết cây.
+    private void CollectRange(AvlNode? node, Student from, Student to, List<Student> result)
+    {
+        if (node == null)
+        {
+            return;
+        }
+
+        // Nút hiện tại lớn hơn "from" thì bên trái mới có thể có kết quả
+        if (Compare(from, node.Data) < 0)
+        {
+            CollectRange(node.Left, from, to, result);
+        }
+
+        if (Compare(from, node.Data) <= 0 && Compare(node.Data, to) <= 0)
+        {
+            result.Add(node.Data);
+        }
+
+        // Nút hiện tại nhỏ hơn "to" thì bên phải mới có thể có kết quả
+        if (Compare(node.Data, to) < 0)
+        {
+            CollectRange(node.Right, from, to, result);
+        }
+    }
+
+
+    // Âm nếu a đứng trước b, 0 nếu cùng khóa, dương nếu a đứng sau b.
+    private int Compare(Student a, Student b)
+    {
+        return CompareIds(a.StudentId, b.StudentId);
+    }
+
+    // So sánh hai mã SV theo giá trị số: ít chữ số hơn thì nhỏ hơn (2 < 10), cùng số chữ số thì so từng chữ số.
+    public static int CompareIds(string a, string b)
+    {
+        string x = a.TrimStart('0');
+        string y = b.TrimStart('0');
+
+        if (x.Length != y.Length)
+        {
+            return x.Length.CompareTo(y.Length);
+        }
+
+        int result = string.CompareOrdinal(x, y);
+        if (result != 0)
+        {
+            return result;
+        }
+        return string.CompareOrdinal(a, b);
+    }
+
+    // Thêm đệ quy: đi xuống đúng chỗ, chèn nút mới, rồi cân bằng lại trên đường quay về.
+    private AvlNode InsertNode(AvlNode? node, Student student)
+    {
+        if (node == null)
+        {
+            return new AvlNode(student);
+        }
+
+        if (Compare(student, node.Data) < 0)
+        {
+            node.Left = InsertNode(node.Left, student);
+        }
         else
         {
-            removed = true;
-
-            // Có 0 hoặc 1 con: lấy con lên thay chỗ
-            if (node.Left == null) return node.Right;
-            if (node.Right == null) return node.Left;
-
-            // Có 2 con: lấy nút nhỏ nhất bên phải lên thay, rồi xóa nút đó đi
-            var next = MinNode(node.Right);
-            node.Key = next.Key;
-            node.Value = next.Value;
-            bool ignored = false;
-            node.Right = Delete(node.Right, next.Key, ref ignored);
+            node.Right = InsertNode(node.Right, student);
         }
 
         return Rebalance(node);
     }
 
-    /// <summary>Cập nhật chiều cao, nếu lệch quá 1 thì xoay để cân bằng lại.</summary>
-    private AvlNode<TKey, TValue> Rebalance(AvlNode<TKey, TValue> node)
+    private AvlNode? DeleteNode(AvlNode? node, Student sample)
+    {
+        if (node == null)
+        {
+            return null;
+        }
+
+        int compare = Compare(sample, node.Data);
+        if (compare < 0)
+        {
+            node.Left = DeleteNode(node.Left, sample);
+        }
+        else if (compare > 0)
+        {
+            node.Right = DeleteNode(node.Right, sample);
+        }
+        else
+        {
+            // Có 0 hoặc 1 con: lấy con lên thay chỗ
+            if (node.Left == null)
+            {
+                return node.Right;
+            }
+            if (node.Right == null)
+            {
+                return node.Left;
+            }
+
+            // Có 2 con: lấy nút nhỏ nhất bên phải lên thay, rồi xóa nút đó đi
+            AvlNode next = MinNode(node.Right);
+            node.Data = next.Data;
+            node.Right = DeleteNode(node.Right, next.Data);
+        }
+
+        return Rebalance(node);
+    }
+
+    // Cập nhật chiều cao, nếu lệch quá 1 thì xoay để cân bằng lại.
+    private AvlNode Rebalance(AvlNode node)
     {
         UpdateHeight(node);
         int balance = node.BalanceFactor;
 
-        if (balance > 1) // lệch trái
+        if (balance > 1)
         {
-            if (node.Left!.BalanceFactor < 0) node.Left = RotateLeft(node.Left); // ca Trái-Phải
+            // Ca Trái-Phải: xoay trái con trái trước
+            if (node.Left!.BalanceFactor < 0)
+            {
+                node.Left = RotateLeft(node.Left);
+            }
             return RotateRight(node);
         }
 
-        if (balance < -1) // lệch phải
+        if (balance < -1)
         {
-            if (node.Right!.BalanceFactor > 0) node.Right = RotateRight(node.Right); // ca Phải-Trái
+            // Ca Phải-Trái: xoay phải con phải trước
+            if (node.Right!.BalanceFactor > 0)
+            {
+                node.Right = RotateRight(node.Right);
+            }
             return RotateLeft(node);
         }
 
         return node;
     }
 
-    private AvlNode<TKey, TValue> RotateRight(AvlNode<TKey, TValue> node)
+    private AvlNode RotateRight(AvlNode node)
     {
-        var newTop = node.Left!;
+        AvlNode newTop = node.Left!;
         node.Left = newTop.Right;
         newTop.Right = node;
 
@@ -262,9 +345,9 @@ public sealed class AvlTree<TKey, TValue>
         return newTop;
     }
 
-    private AvlNode<TKey, TValue> RotateLeft(AvlNode<TKey, TValue> node)
+    private AvlNode RotateLeft(AvlNode node)
     {
-        var newTop = node.Right!;
+        AvlNode newTop = node.Right!;
         node.Right = newTop.Left;
         newTop.Left = node;
 
@@ -274,28 +357,42 @@ public sealed class AvlTree<TKey, TValue>
         return newTop;
     }
 
-    private static void UpdateHeight(AvlNode<TKey, TValue> node)
+    private void UpdateHeight(AvlNode node)
     {
-        node.Height = Math.Max(node.Left?.Height ?? 0, node.Right?.Height ?? 0) + 1;
+        int leftHeight = AvlNode.GetHeight(node.Left);
+        int rightHeight = AvlNode.GetHeight(node.Right);
+        node.Height = Math.Max(leftHeight, rightHeight) + 1;
     }
 
-    private AvlNode<TKey, TValue>? FindNode(TKey key)
+    private AvlNode? FindNode(Student sample)
     {
-        var node = Root;
+        AvlNode? node = Root;
         while (node != null)
         {
-            int cmp = comparer.Compare(key, node.Key);
-            if (cmp == 0) return node;
-            node = cmp < 0 ? node.Left : node.Right;
+            int compare = Compare(sample, node.Data);
+            if (compare == 0)
+            {
+                return node;
+            }
+
+            if (compare < 0)
+            {
+                node = node.Left;
+            }
+            else
+            {
+                node = node.Right;
+            }
         }
         return null;
     }
 
-    private static AvlNode<TKey, TValue> MinNode(AvlNode<TKey, TValue> node)
+    private AvlNode MinNode(AvlNode node)
     {
-        while (node.Left != null) node = node.Left;
+        while (node.Left != null)
+        {
+            node = node.Left;
+        }
         return node;
     }
-
-    private static KeyValuePair<TKey, TValue> ToPair(AvlNode<TKey, TValue> node) => new(node.Key, node.Value);
 }

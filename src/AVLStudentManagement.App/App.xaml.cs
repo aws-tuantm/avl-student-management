@@ -1,8 +1,8 @@
-using System.IO;
-using System.Windows;
 using AVLStudentManagement.App.ViewModels;
 using AVLStudentManagement.Core.Data;
 using AVLStudentManagement.Core.Services;
+using System.IO;
+using System.Windows;
 
 namespace AVLStudentManagement.App;
 
@@ -15,24 +15,52 @@ public partial class App : Application
 
         try
         {
-            // Ráp các đối tượng: Repository -> Service -> ViewModel
-            // "Cơ sở dữ liệu" là data\HoSoSinhVien.xlsx trong thư mục project (đi ngược từ bin\... lên tới chỗ có .csproj).
-            // Chạy ngoài project (đã publish) thì dùng data\ cạnh file exe.
-            var dir = new DirectoryInfo(AppContext.BaseDirectory);
-            while (dir != null && !File.Exists(Path.Combine(dir.FullName, "AVLStudentManagement.App.csproj"))) dir = dir.Parent;
-            var path = Path.Combine(dir?.FullName ?? AppContext.BaseDirectory, "data", "HoSoSinhVien.xlsx");
-            var service = new StudentService(new ExcelStudentRepository(path));
+            string path = FindDataFilePath();
+
+            // Ráp các đối tượng: Repository -> Service -> ViewModel -> cửa sổ chính
+            ExcelStudentRepository repository = new ExcelStudentRepository(path);
+            StudentService service = new StudentService(repository);
             service.Load();
-            new MainWindow { DataContext = new MainViewModel(service, path) }.Show();
+
+            MainWindow window = new MainWindow();
+            window.DataContext = new MainViewModel(service, path);
+            window.Show();
         }
         catch (Exception ex)
         {
-            string msg = ex is DataFormatException d
-                ? $"File dữ liệu bị lỗi tại dòng {d.Row}, cột {d.Column}:\n{d.Message}"
-                : "Không khởi động được:\n" + ex.Message;
-            MessageBox.Show(msg, "Lỗi khởi động", MessageBoxButton.OK, MessageBoxImage.Error);
+            string message;
+            if (ex is StudentException)
+            {
+                message = "File dữ liệu bị lỗi:\n" + ex.Message;
+            }
+            else
+            {
+                message = "Không khởi động được:\n" + ex.Message;
+            }
+
+            MessageBox.Show(message, "Lỗi khởi động", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    // File dữ liệu: dataHoSoSinhVien.xlsx trong thư mục project (tìm ngược từ bin lên chỗ có .csproj), bản đóng gói thì cạnh file exe.
+    private static string FindDataFilePath()
+    {
+        string folder = AppContext.BaseDirectory;
+
+        DirectoryInfo? current = new DirectoryInfo(AppContext.BaseDirectory);
+        while (current != null)
+        {
+            string projectFile = Path.Combine(current.FullName, "AVLStudentManagement.App.csproj");
+            if (File.Exists(projectFile))
+            {
+                folder = current.FullName;
+                break;
+            }
+            current = current.Parent;
+        }
+
+        return Path.Combine(folder, "data", "HoSoSinhVien.xlsx");
     }
 
     // Lỗi không bắt được: ghi log.txt cạnh file exe rồi báo người dùng
@@ -40,10 +68,13 @@ public partial class App : Application
     {
         try
         {
-            File.AppendAllText(Path.Combine(AppContext.BaseDirectory, "log.txt"),
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Exception}\n\n");
+            string logPath = Path.Combine(AppContext.BaseDirectory, "log.txt");
+            string line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {e.Exception}\n\n";
+            File.AppendAllText(logPath, line);
         }
-        catch { /* không ghi được log thì bỏ qua */ }
+        catch
+        {
+        }
 
         MessageBox.Show("Có lỗi không mong muốn:\n" + e.Exception.Message,
             "Lỗi", MessageBoxButton.OK, MessageBoxImage.Error);

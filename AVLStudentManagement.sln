@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 17
-VisualStudioVersion = 17.0.31903.59
+# Visual Studio Version 18
+VisualStudioVersion = 18.8.12021.73 stable
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
 EndProject
@@ -10,6 +10,12 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AVLStudentManagement.App", "src\AVLStudentManagement.App\AVLStudentManagement.App.csproj", "{F934406F-57A0-46E0-B0CF-7BF8C0A65FC9}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AVLStudentManagement.Tests", "src\AVLStudentManagement.Tests\AVLStudentManagement.Tests.csproj", "{0C360FFA-594A-43D0-8C9C-BEF954C04BDA}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{3833B5BC-C6D7-421D-AC85-D6924EE945F2}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -65,5 +71,8 @@ Global
 		{FED5DCFC-CCD4-4959-AB2A-6C6D0214A91E} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{F934406F-57A0-46E0-B0CF-7BF8C0A65FC9} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{0C360FFA-594A-43D0-8C9C-BEF954C04BDA} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {107D9177-C61B-40EF-9E62-7A6515E67B92}
 	EndGlobalSection
 EndGlobal

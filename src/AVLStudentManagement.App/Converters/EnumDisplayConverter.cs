@@ -1,20 +1,35 @@
+using AVLStudentManagement.Core.Models;
 using System.Globalization;
 using System.Windows.Data;
-using AVLStudentManagement.Core.Models;
 
 namespace AVLStudentManagement.App.Converters;
 
-/// <summary>Đổi enum thành nhãn tiếng Việt (gọi ToDisplay của Core).</summary>
-public sealed class EnumDisplayConverter : IValueConverter
+// Đổi giá trị enum thành nhãn tiếng Việt để hiện lên bảng.
+public class EnumDisplayConverter : IValueConverter
 {
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) => value switch
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
-        Gender g => g.ToDisplay(),
-        Status t => t.ToDisplay(),
-        Grade x => x.ToDisplay(),
-        _ => value?.ToString() ?? "",
-    };
+        if (value is Gender)
+        {
+            return ((Gender)value).ToDisplay();
+        }
+        if (value is Status)
+        {
+            return ((Status)value).ToDisplay();
+        }
+        if (value is Grade)
+        {
+            return ((Grade)value).ToDisplay();
+        }
+        if (value == null)
+        {
+            return "";
+        }
+        return value.ToString()!;
+    }
 
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
         throw new NotSupportedException();
+    }
 }

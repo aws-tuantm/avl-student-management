@@ -1,22 +1,64 @@
 namespace AVLStudentManagement.Core.Models;
 
-/// <summary>Danh mục Khoa và các Lớp thuộc khoa đó.</summary>
-public sealed class Catalog
+// Danh mục Khoa và các Lớp thuộc khoa đó.
+public class Catalog
 {
-    private readonly Dictionary<string, List<string>> data = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<string>> data = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
-    public IEnumerable<string> Faculties => data.Keys;
+    public IEnumerable<string> Faculties
+    {
+        get { return data.Keys; }
+    }
 
-    public IReadOnlyList<string> ClassesOf(string faculty) =>
-        data.TryGetValue(faculty, out var list) ? list : Array.Empty<string>();
+    public bool HasFaculty(string faculty)
+    {
+        return data.ContainsKey(faculty);
+    }
+
+    public IReadOnlyList<string> ClassesOf(string faculty)
+    {
+        List<string>? classes;
+        if (data.TryGetValue(faculty, out classes))
+        {
+            return classes;
+        }
+        return new List<string>();
+    }
 
     public void Add(string faculty, string className)
     {
-        if (!data.TryGetValue(faculty, out var list)) data[faculty] = list = new List<string>();
-        if (!list.Contains(className, StringComparer.OrdinalIgnoreCase)) list.Add(className);
+        List<string>? classes;
+        if (!data.TryGetValue(faculty, out classes))
+        {
+            classes = new List<string>();
+            data[faculty] = classes;
+        }
+
+        if (!ContainsIgnoreCase(classes, className))
+        {
+            classes.Add(className);
+        }
     }
 
-    /// <summary>Lớp có thuộc đúng khoa không.</summary>
-    public bool Has(string faculty, string className) =>
-        data.TryGetValue(faculty, out var list) && list.Contains(className, StringComparer.OrdinalIgnoreCase);
+    public bool Has(string faculty, string className)
+    {
+        List<string>? classes;
+        if (!data.TryGetValue(faculty, out classes))
+        {
+            return false;
+        }
+        return ContainsIgnoreCase(classes, className);
+    }
+
+    private static bool ContainsIgnoreCase(List<string> list, string text)
+    {
+        foreach (string item in list)
+        {
+            if (item.Equals(text, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
+    }
 }
