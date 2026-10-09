@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AVLStudentManagement.App/AVLStudentManagement.App.csproj" />
+    <Project Path="src/AVLStudentManagement.Core/AVLStudentManagement.Core.csproj" />
+    <Project Path="src/AVLStudentManagement.Tests/AVLStudentManagement.Tests.csproj" />
+  </Folder>
+</Solution>

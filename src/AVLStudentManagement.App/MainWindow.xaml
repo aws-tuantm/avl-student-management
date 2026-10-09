@@ -1,0 +1,539 @@
+<Window x:Class="AVLStudentManagement.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Name="Root"
+        Title="Quản lý hồ sơ sinh viên (cây AVL)" Height="760" Width="1280"
+        MinWidth="1100" MinHeight="680" WindowStartupLocation="CenterScreen"
+        Background="{StaticResource AppBackgroundBrush}"
+        FontFamily="{StaticResource AppFont}" FontSize="{StaticResource FontSizeBody}"
+        Foreground="{StaticResource TextPrimaryBrush}">
+    <Window.Resources>
+        <!-- Hiện enum bằng nhãn tiếng Việt -->
+        <DataTemplate x:Key="EnumItem">
+            <TextBlock Text="{Binding Converter={StaticResource EnumDisplay}}" />
+        </DataTemplate>
+        <DataTemplate x:Key="OptionItem">
+            <TextBlock Text="{Binding Label}" />
+        </DataTemplate>
+        <Style x:Key="LegendText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource FontSizeCaption}" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <!-- Nhãn nhỏ cạnh ô trên thanh công cụ -->
+        <Style x:Key="ToolbarLabel" TargetType="TextBlock">
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="4,0,4,0" />
+        </Style>
+        <!-- Ngăn cách ô trên thanh trạng thái -->
+        <Style x:Key="StatusSeparator" TargetType="Rectangle">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="Fill" Value="{StaticResource BorderBrushInput}" />
+            <Setter Property="Margin" Value="10,4" />
+        </Style>
+    </Window.Resources>
+
+    <!-- Phím tắt: gắn vào command có sẵn của MainViewModel -->
+    <Window.InputBindings>
+        <KeyBinding Gesture="Ctrl+N" Command="{Binding ClearCommand}" />
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+        <KeyBinding Gesture="Ctrl+D" Command="{Binding DeleteCommand}" />
+        <KeyBinding Gesture="F5" Command="{Binding ShowAllCommand}" />
+        <KeyBinding Gesture="F3" Command="ApplicationCommands.Find" />
+        <KeyBinding Gesture="F4" Command="{Binding ToggleDetailPaneCommand}" />
+        <KeyBinding Gesture="Ctrl+Shift+F" Command="{Binding ToggleAdvancedCommand}" />
+        <KeyBinding Gesture="Escape" Command="{Binding EscapeCommand}" />
+        <KeyBinding Gesture="Ctrl+1" Command="{Binding ShowProfileTabCommand}" />
+        <KeyBinding Gesture="Ctrl+2" Command="{Binding ShowTreeTabCommand}" />
+        <KeyBinding Gesture="F1" Command="{Binding ShowShortcutsCommand}" />
+        <KeyBinding Gesture="Ctrl+I" Command="{Binding ImportExcelCommand}" />
+        <KeyBinding Gesture="Ctrl+E" Command="{Binding ExportExcelCommand}" />
+        <KeyBinding Gesture="Ctrl+Q" Command="{Binding ExitCommand}" />
+    </Window.InputBindings>
+    <Window.CommandBindings>
+        <!-- Ctrl+F (có sẵn của ApplicationCommands.Find) và F3: đưa con trỏ vào ô tìm nhanh -->
+        <CommandBinding Command="ApplicationCommands.Find" Executed="FocusSearch" />
+    </Window.CommandBindings>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="24" />
+        </Grid.RowDefinitions>
+
+        <!-- ================= Thanh menu ================= -->
+        <Menu Grid.Row="0">
+            <MenuItem Header="Tệp">
+                <MenuItem Header="Làm mới dữ liệu" InputGestureText="F5" Command="{Binding ShowAllCommand}" />
+                <MenuItem Header="Nhập từ Excel..." InputGestureText="Ctrl+I" Command="{Binding ImportExcelCommand}" />
+                <MenuItem Header="Xuất ra Excel..." InputGestureText="Ctrl+E" Command="{Binding ExportExcelCommand}" />
+                <Separator />
+                <MenuItem Header="Thoát" InputGestureText="Ctrl+Q" Command="{Binding ExitCommand}" />
+            </MenuItem>
+            <MenuItem Header="Sinh viên">
+                <MenuItem Header="Thêm mới" InputGestureText="Ctrl+N" Command="{Binding ClearCommand}" />
+                <MenuItem Header="Lưu" InputGestureText="Ctrl+S" Command="{Binding SaveCommand}" />
+                <MenuItem Header="Xóa" InputGestureText="Del" Command="{Binding DeleteCommand}" />
+            </MenuItem>
+            <MenuItem Header="Xem">
+                <MenuItem Header="Hồ sơ" InputGestureText="Ctrl+1" Command="{Binding ShowProfileTabCommand}" />
+                <MenuItem Header="Cấu trúc cây" InputGestureText="Ctrl+2" Command="{Binding ShowTreeTabCommand}" />
+                <Separator />
+                <MenuItem Header="Ẩn/hiện bảng chi tiết" InputGestureText="F4" Command="{Binding ToggleDetailPaneCommand}" />
+                <MenuItem Header="Bộ lọc nâng cao" InputGestureText="Ctrl+Shift+F" Command="{Binding ToggleAdvancedCommand}" />
+            </MenuItem>
+            <MenuItem Header="Công cụ">
+                <MenuItem Header="Thủ khoa" Command="{Binding TopStudentCommand}" />
+                <MenuItem Header="Điểm thấp nhất" Command="{Binding LowestGpaStudentCommand}" />
+                <Separator />
+                <MenuItem Header="Top N..." Command="{Binding OpenAdvancedCommand}" />
+                <MenuItem Header="Xóa theo khoảng..." Command="{Binding OpenAdvancedCommand}" />
+            </MenuItem>
+            <MenuItem Header="Trợ giúp">
+                <MenuItem Header="Phím tắt" InputGestureText="F1" Command="{Binding ShowShortcutsCommand}" />
+            </MenuItem>
+        </Menu>
+
+        <!-- ================= Thanh công cụ ================= -->
+        <Border Grid.Row="1" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrushLight}"
+                BorderThickness="0,1,0,1" Padding="6,3">
+            <DockPanel>
+                <!-- Bên phải: ẩn/hiện panel chi tiết và bộ lọc nâng cao -->
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding ToggleAdvancedCommand}" ToolTip="Bộ lọc nâng cao (Ctrl+Shift+F)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE71C;" /><TextBlock Text="Nâng cao" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding ToggleDetailPaneCommand}" ToolTip="Ẩn/hiện bảng chi tiết (F4)">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE700;" /><TextBlock Text="Chi tiết" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+
+                <StackPanel Orientation="Horizontal">
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding AddCommand}" ToolTip="Thêm sinh viên mới từ form">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE710;" Foreground="{StaticResource PrimaryBrush}" /><TextBlock Text="Thêm" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding SaveCommand}" ToolTip="Lưu: thêm mới hoặc cập nhật tùy chế độ">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE74E;" Foreground="{StaticResource PrimaryBrush}" /><TextBlock Text="Lưu" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding DeleteCommand}" ToolTip="Xóa sinh viên đang chọn">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE74D;" Foreground="{StaticResource DangerBrush}" /><TextBlock Text="Xóa" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding ClearCommand}" ToolTip="Làm mới form để nhập mới">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE72C;" /><TextBlock Text="Làm mới" />
+                        </StackPanel>
+                    </Button>
+
+                    <Rectangle Style="{StaticResource ToolbarSeparator}" />
+
+                    <!-- Tìm nhanh theo Mã SV -->
+                    <TextBlock Style="{StaticResource ToolbarLabel}" Text="Mã SV:" />
+                    <TextBox x:Name="SearchBox" Width="120" AutomationProperties.Name="Tìm theo mã sinh viên"
+                             ToolTip="Tìm nhanh theo mã sinh viên"
+                             Text="{Binding SearchId, UpdateSourceTrigger=PropertyChanged}">
+                        <TextBox.InputBindings>
+                            <KeyBinding Key="Enter" Command="{Binding SearchCommand}" />
+                        </TextBox.InputBindings>
+                    </TextBox>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding SearchCommand}" ToolTip="Tìm" AutomationProperties.Name="Tìm" Padding="6,0">
+                        <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE721;" Margin="0" />
+                    </Button>
+
+                    <Rectangle Style="{StaticResource ToolbarSeparator}" />
+
+                    <TextBlock Style="{StaticResource ToolbarLabel}" Text="Trạng thái:" />
+                    <ComboBox Width="110" ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding FilterStatus}"
+                              ItemTemplate="{StaticResource OptionItem}" />
+                    <TextBlock Style="{StaticResource ToolbarLabel}" Text="Xếp loại:" Margin="8,0,4,0" />
+                    <ComboBox Width="110" ItemsSource="{Binding GradeOptions}" SelectedItem="{Binding FilterGrade}"
+                              ItemTemplate="{StaticResource OptionItem}" />
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding FilterCommand}" ToolTip="Lọc theo trạng thái, xếp loại và các tiêu chí nâng cao" Margin="6,0,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE71C;" /><TextBlock Text="Lọc" />
+                        </StackPanel>
+                    </Button>
+                    <Button Style="{StaticResource ToolbarButton}" Command="{Binding ShowAllCommand}" ToolTip="Bỏ lọc, hiện tất cả">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE894;" /><TextBlock Text="Bỏ lọc" />
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- ================= Vùng chính ================= -->
+        <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedTabIndex}">
+            <!-- Tab 1: Hồ sơ -->
+            <TabItem Header="Hồ sơ">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" MinWidth="300" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="{Binding DetailWidth, Mode=TwoWay}" MaxWidth="600" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Bên trái: bộ lọc nâng cao (thu gọn) + bảng -->
+                    <DockPanel Grid.Column="0">
+                        <Expander DockPanel.Dock="Top" Header="Bộ lọc nâng cao" IsExpanded="{Binding IsAdvancedOpen}"
+                                  Background="{StaticResource CardBrush}" Padding="6,0,6,4">
+                            <WrapPanel Margin="0,4,0,0">
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Lớp" />
+                                <TextBox Width="80" Margin="0,0,8,4" Text="{Binding FilterClass, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Lọc theo lớp" />
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Khoa" />
+                                <TextBox Width="120" Margin="0,0,8,4" Text="{Binding FilterFaculty, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Lọc theo khoa" />
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Họ tên" />
+                                <TextBox Width="130" Margin="0,0,12,4" Text="{Binding FilterName, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Lọc theo họ tên">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding FilterCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Mã SV từ" />
+                                <TextBox Width="90" Margin="0,0,4,4" Text="{Binding FromId, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Mã sinh viên từ" />
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="đến" />
+                                <TextBox Width="90" Margin="0,0,4,4" Text="{Binding ToId, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Mã sinh viên đến" />
+                                <Button Margin="0,0,4,4" Command="{Binding SearchRangeCommand}" ToolTip="Tìm theo khoảng mã SV" Content="Tìm" />
+                                <Button Margin="0,0,12,4" Style="{StaticResource DangerButton}" Command="{Binding DeleteRangeCommand}"
+                                        ToolTip="Xóa các sinh viên trong khoảng mã SV (có hỏi xác nhận)" Content="Xóa theo khoảng" />
+
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Điểm TB từ" />
+                                <TextBox Width="50" Margin="0,0,4,4" Text="{Binding FromGpa, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Điểm từ" />
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="đến" />
+                                <TextBox Width="50" Margin="0,0,4,4" Text="{Binding ToGpa, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Điểm đến" />
+                                <Button Margin="0,0,12,4" Command="{Binding GpaRangeCommand}" ToolTip="Tìm theo khoảng điểm TB" Content="Tìm theo điểm" />
+
+                                <Button Margin="0,0,4,4" Command="{Binding TopStudentCommand}" ToolTip="Sinh viên có điểm cao nhất" Content="Thủ khoa" />
+                                <Button Margin="0,0,12,4" Command="{Binding LowestGpaStudentCommand}" ToolTip="Sinh viên có điểm thấp nhất" Content="Điểm thấp nhất" />
+                                <TextBlock Style="{StaticResource ToolbarLabel}" Text="Top N" />
+                                <TextBox Width="40" Margin="0,0,4,4" Text="{Binding TopCount, UpdateSourceTrigger=PropertyChanged}" AutomationProperties.Name="Số lượng Top N" />
+                                <Button Margin="0,0,0,4" Command="{Binding TopNCommand}" ToolTip="Xem N sinh viên điểm cao nhất" Content="Xem" />
+                            </WrapPanel>
+                        </Expander>
+
+                        <!-- Bảng: dày, viền 1px, kéo đổi độ rộng cột, bấm tiêu đề để sắp xếp -->
+                        <Border BorderBrush="{StaticResource BorderBrushLight}" BorderThickness="0,1,0,0" Background="{StaticResource CardBrush}">
+                            <DataGrid x:Name="StudentGrid" ItemsSource="{Binding Items}" SelectedItem="{Binding SelectedItem}"
+                                      MouseDoubleClick="StudentGrid_MouseDoubleClick">
+                                <DataGrid.InputBindings>
+                                    <!-- Delete chỉ xóa dòng khi bảng đang có focus -->
+                                    <KeyBinding Key="Delete" Command="{Binding DeleteCommand}" />
+                                </DataGrid.InputBindings>
+                                <DataGrid.RowStyle>
+                                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                                        <EventSetter Event="PreviewMouseRightButtonDown" Handler="Row_RightClick" />
+                                        <Setter Property="Tag" Value="{Binding DataContext, RelativeSource={RelativeSource AncestorType=DataGrid}}" />
+                                        <Setter Property="ContextMenu">
+                                            <Setter.Value>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Sửa / Chọn" Command="{Binding PlacementTarget.Tag.ShowDetailPaneCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                    <MenuItem Header="Xóa" InputGestureText="Del"
+                                                              Command="{Binding PlacementTarget.Tag.DeleteCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                    <Separator />
+                                                    <MenuItem Header="Sao chép mã SV"
+                                                              Command="{Binding PlacementTarget.Tag.CopyIdCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                                </ContextMenu>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </DataGrid.RowStyle>
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Mã SV" Binding="{Binding StudentId}" Width="80" />
+                                    <DataGridTextColumn Header="Họ tên" Binding="{Binding FullName}" Width="*" MinWidth="110"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                    <DataGridTextColumn Header="Ngày sinh" Binding="{Binding BirthDate, StringFormat=dd/MM/yyyy}" Width="80" />
+                                    <DataGridTextColumn Header="Giới tính" Binding="{Binding Gender, Converter={StaticResource EnumDisplay}}" Width="60" />
+                                    <DataGridTextColumn Header="Email" Binding="{Binding Email}" Width="160"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                    <DataGridTextColumn Header="Lớp" Binding="{Binding ClassName}" Width="70"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                    <DataGridTextColumn Header="Khoa" Binding="{Binding Faculty}" Width="130"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                    <DataGridTextColumn Header="Trạng thái" Binding="{Binding Status, Converter={StaticResource EnumDisplay}}" Width="90"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                    <DataGridTextColumn Header="Điểm TB" Binding="{Binding Gpa, StringFormat=0.00}" Width="60"
+                                                        ElementStyle="{StaticResource RightAligned}" />
+                                    <DataGridTextColumn Header="Xếp loại" Binding="{Binding Grade, Converter={StaticResource EnumDisplay}}" Width="76"
+                                                        ElementStyle="{StaticResource Trimmed}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </DockPanel>
+
+                    <GridSplitter Grid.Column="1" Width="5" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                                  ResizeBehavior="PreviousAndNext" Background="Transparent" Cursor="SizeWE" />
+
+                    <!-- Bên phải: panel chi tiết / biểu mẫu (kéo splitter để đổi rộng, F4 để thu gọn) -->
+                    <Border Grid.Column="2" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrushLight}"
+                            BorderThickness="1" ClipToBounds="True">
+                        <DockPanel MinWidth="260">
+                            <Border DockPanel.Dock="Top" Background="#F7F7F7" BorderBrush="{StaticResource BorderBrushLight}"
+                                    BorderThickness="0,0,0,1" Padding="8,3">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Style="{StaticResource ToolbarButton}" Command="{Binding ToggleDetailPaneCommand}"
+                                            ToolTip="Thu gọn panel (F4)" Height="20" Padding="4,0" AutomationProperties.Name="Thu gọn panel chi tiết">
+                                        <TextBlock Style="{StaticResource ToolbarIcon}" Text="&#xE76C;" Margin="0" FontSize="10" />
+                                    </Button>
+                                    <TextBlock Text="Chi tiết sinh viên" FontWeight="SemiBold" VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,0,8,4">
+                                <StackPanel>
+                                    <!-- Thông tin cá nhân -->
+                                    <TextBlock Style="{StaticResource GroupTitle}" Text="THÔNG TIN CÁ NHÂN" Margin="0,6,0,4" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition /><ColumnDefinition />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Style="{StaticResource CellLeft}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Mã SV (khóa khi sửa)" />
+                                            <TextBox TabIndex="0" AutomationProperties.Name="Mã sinh viên"
+                                                     Text="{Binding StudentId, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding IsNew}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [StudentId]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Style="{StaticResource CellRight}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Ngày sinh" />
+                                            <DatePicker TabIndex="1" Language="vi-VN" AutomationProperties.Name="Ngày sinh" SelectedDate="{Binding BirthDate}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [BirthDate]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource CellFull}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Họ tên" />
+                                            <TextBox x:Name="FullNameBox" TabIndex="2" AutomationProperties.Name="Họ tên"
+                                                     Text="{Binding FullName, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [FullName]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="0" Style="{StaticResource CellLeft}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Giới tính" />
+                                            <ComboBox TabIndex="3" ItemsSource="{Binding Genders}" SelectedItem="{Binding Gender}"
+                                                      ItemTemplate="{StaticResource EnumItem}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Gender]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="1" Style="{StaticResource CellRight}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="CCCD" />
+                                            <TextBox TabIndex="4" AutomationProperties.Name="CCCD"
+                                                     Text="{Binding NationalId, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [NationalId]}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Liên hệ -->
+                                    <TextBlock Style="{StaticResource GroupTitle}" Text="LIÊN HỆ" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition /><ColumnDefinition />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Style="{StaticResource CellLeft}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Số điện thoại" />
+                                            <TextBox TabIndex="5" AutomationProperties.Name="Số điện thoại"
+                                                     Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Phone]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Style="{StaticResource CellRight}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Email" />
+                                            <TextBox TabIndex="6" AutomationProperties.Name="Email"
+                                                     Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Email]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource CellFull}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Địa chỉ" />
+                                            <TextBox TabIndex="7" AutomationProperties.Name="Địa chỉ"
+                                                     Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Address]}" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Học vụ -->
+                                    <TextBlock Style="{StaticResource GroupTitle}" Text="HỌC VỤ" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition /><ColumnDefinition />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" /><RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0" Style="{StaticResource CellLeft}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Khoa" />
+                                            <ComboBox TabIndex="8" ItemsSource="{Binding Faculties}" SelectedItem="{Binding Faculty}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Faculty]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="1" Style="{StaticResource CellRight}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Lớp (theo khoa)" />
+                                            <ComboBox TabIndex="9" ItemsSource="{Binding ClassNames}" SelectedItem="{Binding ClassName}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [ClassName]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="0" Style="{StaticResource CellLeft}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Trạng thái" />
+                                            <ComboBox TabIndex="10" ItemsSource="{Binding Statuses}" SelectedItem="{Binding Status}"
+                                                      ItemTemplate="{StaticResource EnumItem}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Status]}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Style="{StaticResource CellRight}">
+                                            <TextBlock Style="{StaticResource FieldLabel}" Text="Điểm TB (thang 4)" />
+                                            <TextBox TabIndex="11" AutomationProperties.Name="Điểm trung bình"
+                                                     Text="{Binding Gpa, UpdateSourceTrigger=PropertyChanged}" />
+                                            <TextBlock Style="{StaticResource Err}" Text="{Binding [Gpa]}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
+
+            <!-- Tab 2: Cấu trúc cây -->
+            <TabItem Header="Cấu trúc cây">
+                <DockPanel x:Name="TreeRoot" DataContext="{Binding Tree}">
+                    <!-- Thanh công cụ một dòng: kiểu duyệt + thống kê -->
+                    <Border DockPanel.Dock="Top" Background="{StaticResource CardBrush}" BorderBrush="{StaticResource BorderBrushLight}"
+                            BorderThickness="0,0,0,1" Padding="6,3">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource ToolbarLabel}" Text="Kiểu duyệt:" />
+                            <ComboBox ItemsSource="{Binding Orders}" SelectedIndex="{Binding OrderIndex}" Width="110" />
+                            <Rectangle Style="{StaticResource ToolbarSeparator}" Margin="10,4" />
+                            <TextBlock VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}">
+                                <Run Text="n = " /><Run Text="{Binding DataContext.TotalCount, ElementName=Root, Mode=OneWay}" FontWeight="SemiBold" />
+                                <Run Text="   chiều cao h = " /><Run Text="{Binding DataContext.TreeHeight, ElementName=Root, Mode=OneWay}" FontWeight="SemiBold" />
+                                <Run Text="   log2(n) = " /><Run Text="{Binding DataContext.Log2Text, ElementName=Root, Mode=OneWay}" FontWeight="SemiBold" />
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                    <!-- Danh sách duyệt: một dòng, cuộn ngang -->
+                    <Border DockPanel.Dock="Top" Margin="6,4,6,4" Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource BorderBrushInput}" BorderThickness="1" CornerRadius="3">
+                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                      AutomationProperties.Name="Thứ tự duyệt cây">
+                            <TextBlock Text="{Binding Traversal}" Margin="6,4" TextWrapping="NoWrap" />
+                        </ScrollViewer>
+                    </Border>
+
+                    <!-- Vùng vẽ cây + chú giải -->
+                    <Border BorderBrush="{StaticResource BorderBrushLight}" BorderThickness="0,1,0,0" Background="{StaticResource CardBrush}">
+                        <Grid>
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                                <Grid Width="{Binding CanvasWidth}" Height="{Binding CanvasHeight}">
+                                    <!-- Cạnh nằm dưới -->
+                                    <ItemsControl ItemsSource="{Binding Edges}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Line X1="{Binding X1}" Y1="{Binding Y1}" X2="{Binding X2}" Y2="{Binding Y2}"
+                                                      Stroke="#9CA3AF" StrokeThickness="1.2" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+
+                                    <!-- Nút nằm trên -->
+                                    <ItemsControl ItemsSource="{Binding Nodes}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate><Canvas /></ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemContainerStyle>
+                                            <Style TargetType="ContentPresenter">
+                                                <Setter Property="Canvas.Left" Value="{Binding X}" />
+                                                <Setter Property="Canvas.Top" Value="{Binding Y}" />
+                                            </Style>
+                                        </ItemsControl.ItemContainerStyle>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Width="{Binding DataContext.NodeWidth, ElementName=TreeRoot}"
+                                                        Height="{Binding DataContext.NodeHeight, ElementName=TreeRoot}"
+                                                        CornerRadius="8" BorderThickness="1.5">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border">
+                                                            <Setter Property="Background" Value="{StaticResource SuccessLightBrush}" />
+                                                            <Setter Property="BorderBrush" Value="{StaticResource SuccessBrush}" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsLeaning}" Value="True">
+                                                                    <Setter Property="Background" Value="{StaticResource WarningLightBrush}" />
+                                                                    <Setter Property="BorderBrush" Value="{StaticResource WarningBrush}" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                                                        <TextBlock Text="{Binding StudentId}" FontWeight="SemiBold" FontSize="12" HorizontalAlignment="Center" />
+                                                        <TextBlock FontSize="10" HorizontalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}">
+                                                            <Run Text="h=" /><Run Text="{Binding Height, Mode=OneWay}" />
+                                                            <Run Text=" bf=" /><Run Text="{Binding BalanceFactor, Mode=OneWay}" />
+                                                        </TextBlock>
+                                                    </StackPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </ScrollViewer>
+
+                            <!-- Chú giải ở góc phải trên -->
+                            <Border HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,8,24,0" Padding="8,4"
+                                    Background="#EEFFFFFF" BorderBrush="{StaticResource BorderBrushLight}" BorderThickness="1" CornerRadius="3">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="12" Height="12" CornerRadius="3" Background="{StaticResource SuccessLightBrush}"
+                                                BorderBrush="{StaticResource SuccessBrush}" BorderThickness="1" Margin="0,0,6,0" />
+                                        <TextBlock Style="{StaticResource LegendText}" Text="Cân bằng (bf = 0)" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Margin="0,3,0,0">
+                                        <Border Width="12" Height="12" CornerRadius="3" Background="{StaticResource WarningLightBrush}"
+                                                BorderBrush="{StaticResource WarningBrush}" BorderThickness="1" Margin="0,0,6,0" />
+                                        <TextBlock Style="{StaticResource LegendText}" Text="Lệch (|bf| = 1)" />
+                                    </StackPanel>
+                                    <TextBlock Style="{StaticResource LegendText}" Text="h: chiều cao, bf: hệ số cân bằng" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </DockPanel>
+            </TabItem>
+        </TabControl>
+
+        <!-- ================= Thanh trạng thái (24px) ================= -->
+        <Border Grid.Row="3" Background="#F0F0F0" BorderBrush="{StaticResource BorderBrushLight}" BorderThickness="0,1,0,0"
+                TextElement.FontSize="11">
+            <Grid Margin="8,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock VerticalAlignment="Center"><Run Text="Tổng SV: " /><Run Text="{Binding TotalCount, Mode=OneWay}" FontWeight="SemiBold" /></TextBlock>
+                    <Rectangle Style="{StaticResource StatusSeparator}" />
+                    <TextBlock VerticalAlignment="Center"><Run Text="Đang hiển thị: " /><Run Text="{Binding VisibleCount, Mode=OneWay}" FontWeight="SemiBold" /></TextBlock>
+                    <Rectangle Style="{StaticResource StatusSeparator}" />
+                    <TextBlock VerticalAlignment="Center"><Run Text="Cao cây h = " /><Run Text="{Binding TreeHeight, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  |  log2(n) = " /><Run Text="{Binding Log2Text, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  |  Số lần xoay: " /><Run Text="{Binding RotationCount, Mode=OneWay}" FontWeight="SemiBold" /></TextBlock>
+                    <Rectangle Style="{StaticResource StatusSeparator}" />
+                    <TextBlock VerticalAlignment="Center"><Run Text="Thao tác gần nhất: " /><Run Text="{Binding LastTimeText, Mode=OneWay}" FontWeight="SemiBold" /></TextBlock>
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding Message}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="12,0" />
+                <TextBlock Grid.Column="2" Text="F1 Phím tắt" VerticalAlignment="Center" Foreground="{StaticResource TextSecondaryBrush}" />
+            </Grid>
+        </Border>
+    </Grid>
+</Window>
